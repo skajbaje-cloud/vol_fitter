@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+*.db
+*.parquet
+.ipynb_checkpoints/
+setup_git.bat
