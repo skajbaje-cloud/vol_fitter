@@ -4,3 +4,7 @@ __pycache__/
 *.parquet
 .ipynb_checkpoints/
 setup_git.bat
+universe_*.csv
+.env
+*.egg-info/
+.pytest_cache/

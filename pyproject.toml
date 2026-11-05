@@ -1,0 +1,29 @@
+[project]
+name = "vol_fitter"
+version = "0.1.0"
+description = "Delta-space implied vol surface fitter, fed by LSEG Workspace chain snapshots."
+requires-python = ">=3.12"
+dependencies = [
+    "lseg-data",
+    "pandas",
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "sqlalchemy",
+    "pymysql",
+    "python-dotenv",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

@@ -1,3 +1,0 @@
-lseg-data
-pandas
-matplotlib
