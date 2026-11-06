@@ -33,6 +33,7 @@ names = Table(
     Column("name_id", Integer, primary_key=True, autoincrement=True),
     Column("name", String(32), unique=True, nullable=False),
     Column("chain_ric", String(64)),
+    Column("vol_ric", String(32)),
     Column("display_name", String(128)),
     Column("active", Boolean, default=True),
     Column("created_ts", DateTime),

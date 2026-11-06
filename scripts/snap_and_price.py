@@ -1,8 +1,12 @@
 """Snap a live option chain, price it (forwards/IV/Greeks), persist to MySQL.
 
 Usage:
-    python scripts/snap_and_price.py
+    python scripts/snap_and_price.py --underlying .STOXX50E
     python scripts/snap_and_price.py --underlying .STOXX50E --chain-ric "0#STXE*.EX" --vol-ric .V6I3
+
+chain-ric/vol-ric only need to be passed the first time a name is used (or
+to change them); they're then stored in the `names` table and looked up by
+--underlying automatically on later runs.
 
 Requires a running, signed-in LSEG Workspace session and a .env with real
 MySQL credentials (see .env.example); run `python -m vol_fitter.db.init_db`
@@ -32,8 +36,6 @@ from vol_fitter.snapshot.universe_cache import UniverseCache
 logger = get_logger(__name__)
 
 DEFAULT_UNDERLYING = ".STOXX50E"
-DEFAULT_CHAIN_RIC = "0#STXE*.EX"
-DEFAULT_VOL_RIC = ".V6I3"
 
 _RAW_QUOTE_COLS = [c.name for c in schema.raw_quotes.columns if c.name != "id"]
 _MATURITY_COLS = [
@@ -42,9 +44,20 @@ _MATURITY_COLS = [
 ]
 
 
-def run(underlying: str, chain_ric: str, vol_ric: str) -> None:
+def run(underlying: str, chain_ric: str | None = None, vol_ric: str | None = None) -> None:
     repo = VolFitterRepository(build_engine())
-    name_id = repo.get_or_create_name_id(NameRecord(name=underlying, chain_ric=chain_ric))
+    existing = repo.get_name(underlying)
+    chain_ric = chain_ric or (existing.chain_ric if existing else None)
+    vol_ric = vol_ric or (existing.vol_ric if existing else None)
+    if not chain_ric or not vol_ric:
+        raise SystemExit(
+            f"'{underlying}' isn't registered yet (or is missing chain_ric/vol_ric) -- "
+            "pass --chain-ric and --vol-ric once to register it."
+        )
+
+    name_id = repo.get_or_create_name_id(
+        NameRecord(name=underlying, chain_ric=chain_ric, vol_ric=vol_ric)
+    )
 
     with LsegClient() as client:
         universe_cache = UniverseCache(client, chain_ric, name=underlying)
@@ -83,8 +96,8 @@ def run(underlying: str, chain_ric: str, vol_ric: str) -> None:
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--underlying", default=DEFAULT_UNDERLYING)
-    parser.add_argument("--chain-ric", default=DEFAULT_CHAIN_RIC)
-    parser.add_argument("--vol-ric", default=DEFAULT_VOL_RIC)
+    parser.add_argument("--chain-ric", default=None, help="only needed the first time this name is used")
+    parser.add_argument("--vol-ric", default=None, help="only needed the first time this name is used")
     return parser.parse_args()
 
 

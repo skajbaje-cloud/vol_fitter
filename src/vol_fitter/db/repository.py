@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import pandas as pd
-from sqlalchemy import Table, select
+from sqlalchemy import Table, func, select
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.engine import Engine
 
@@ -31,24 +31,40 @@ class VolFitterRepository:
     # ---- names (control table) ----
 
     def get_or_create_name_id(self, record: NameRecord) -> int:
+        """Insert the name if new, or refresh its chain_ric/vol_ric/display_name/active
+        if it already exists; either way, returns its name_id."""
+        stmt = mysql_insert(schema.names).values(
+            name=record.name,
+            chain_ric=record.chain_ric,
+            vol_ric=record.vol_ric,
+            display_name=record.display_name,
+            active=record.active,
+            created_ts=_utcnow(),
+        )
+        stmt = stmt.on_duplicate_key_update(
+            chain_ric=stmt.inserted.chain_ric,
+            vol_ric=stmt.inserted.vol_ric,
+            display_name=stmt.inserted.display_name,
+            active=stmt.inserted.active,
+            # MySQL trick to get the existing row's PK back out of an
+            # INSERT ... ON DUPLICATE KEY UPDATE via result.lastrowid.
+            name_id=func.last_insert_id(schema.names.c.name_id),
+        )
         with self.engine.begin() as conn:
-            row = conn.execute(
-                select(schema.names.c.name_id).where(schema.names.c.name == record.name)
-            ).first()
-            if row is not None:
-                return row.name_id
-            result = conn.execute(
-                schema.names.insert().values(
-                    name=record.name,
-                    chain_ric=record.chain_ric,
-                    display_name=record.display_name,
-                    active=record.active,
-                    created_ts=_utcnow(),
-                )
-            )
-            name_id = result.inserted_primary_key[0]
-        logger.info("Registered new name '%s' -> name_id=%s", record.name, name_id)
+            result = conn.execute(stmt)
+            name_id = result.lastrowid
+        logger.info("Registered/updated name '%s' -> name_id=%s", record.name, name_id)
         return name_id
+
+    def get_name(self, name: str) -> NameRecord | None:
+        with self.engine.connect() as conn:
+            row = conn.execute(select(schema.names).where(schema.names.c.name == name)).first()
+        if row is None:
+            return None
+        return NameRecord(
+            name=row.name, chain_ric=row.chain_ric, vol_ric=row.vol_ric,
+            display_name=row.display_name, active=row.active, name_id=row.name_id,
+        )
 
     # ---- snapshots (one row per name per snapshot) ----
 
@@ -84,7 +100,10 @@ class VolFitterRepository:
     def _upsert_df(self, table: Table, df: pd.DataFrame, key_cols: tuple[str, ...]) -> int:
         if df.empty:
             return 0
-        records = df.to_dict("records")
+        # pymysql has no wire representation for NaN -- it must be NULL.
+        # astype(object) first so the None survives to_dict() instead of
+        # pandas silently upcasting it back to NaN in a float column.
+        records = df.astype(object).where(df.notna(), None).to_dict("records")
         stmt = mysql_insert(table)
         # Only reference columns actually present in the INSERT's column
         # list (i.e. present in df) -- referencing a table column that
