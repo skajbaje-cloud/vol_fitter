@@ -96,3 +96,41 @@ def test_maturity_params_upsert_overwrites_on_conflict(repo):
     fetched = repo.fetch_maturity_params(name_id, ts)
     assert len(fetched) == 1
     assert fetched.iloc[0]["forward"] == pytest.approx(101.5)
+
+
+def _mat_row(name_id, ts, expiry, **fit):
+    return {"name_id": name_id, "snapshot_ts": ts, "expiry_date": expiry, "T": 0.2,
+            "forward": 100.0, "discount_factor": 0.98, **fit}
+
+
+def test_previous_fits_and_unfitted_snapshots(repo):
+    name_id = repo.get_or_create_name_id(NameRecord(name="TEST.FIT"))
+    e1, e2 = datetime(2027, 3, 1).date(), datetime(2027, 6, 1).date()
+    d1, d2, d3, old = (datetime(2027, 1, d, 12) for d in (5, 6, 7, 1))
+    ok = dict(fit_status="ok", sigma_atm=0.2, skew=0.1, kappa_put=0.02, kappa_call=0.01)
+    repo.upsert_maturity_params(pd.DataFrame([
+        _mat_row(name_id, old, e1, **{**ok, "sigma_atm": 0.5}),     # too old to anchor to
+        _mat_row(name_id, d1, e1, **ok),
+        _mat_row(name_id, d1, e2, **{**ok, "fit_status": "failed"}),  # failed fits never anchor
+        _mat_row(name_id, d2, e1, **{**ok, "sigma_atm": 0.21}),
+        _mat_row(name_id, d3, e1), _mat_row(name_id, d3, e2),         # unfitted
+    ]))
+
+    prev = repo.fetch_previous_fits(name_id, before_ts=d3, max_age_days=3)
+    assert list(prev["expiry_date"]) == [e1]
+    assert prev.iloc[0]["sigma_atm"] == pytest.approx(0.21)
+    assert prev.iloc[0]["snapshot_ts"] == d2
+    assert repo.list_unfitted_snapshots(name_id) == [d3]
+
+
+def test_fit_quotes_roundtrip(repo):
+    name_id = repo.get_or_create_name_id(NameRecord(name="TEST.FITQ"))
+    ts = datetime(2027, 1, 5, 12)
+    df = pd.DataFrame([{
+        "name_id": name_id, "snapshot_ts": ts, "instrument": "X1", "expiry_date": datetime(2027, 3, 1).date(),
+        "delta": 0.4, "model_iv": 0.2, "u": float("nan"), "v_ask": 0.0, "v_bid": 0.0,
+        "x_capped": False, "inside": True, "classification": "ok", "excluded": False,
+    }])
+    assert repo.upsert_fit_quotes(df) == 1
+    got = repo.fetch_fit_quotes(name_id, ts)
+    assert len(got) == 1 and pd.isna(got.iloc[0]["u"]) and got.iloc[0]["classification"] == "ok"

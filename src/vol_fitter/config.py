@@ -58,7 +58,21 @@ FORWARD_MONEYNESS_BAND: float | None = 0.05
 # DF regression deliberately uses the full strike range (wings included) —
 # no band here.
 
-IV_SOLVER_MIN_TOTAL_STDEV = 1e-7       # bisection bracket lower bound on sigma*sqrt(T)
+# ---- smile model (per-expiry, delta space) ----
+# sigma(z) = atm + skew*z + kappa_put*(z+)^2 + kappa_call*(z-)^2,  z = Phi^-1(forward call delta)
+# kappa = vol added above the skew line at z = +/-1 (about the 16-delta put / call).
+#                    sigma_atm  skew  kappa_put  kappa_call
+SMILE_LOWER = (0.01, -1.0, -0.5, -0.5)
+SMILE_UPPER = (3.00, 1.0, 1.0, 1.0)
+SMILE_VOL_FLOOR = 0.01                 # model vol kept above this across the whole delta range
+
+# ---- bid-ask fit: previous-fit anchor (parameter space) ----
+# 0 disables anchoring. Placeholders until calibrated from day-to-day parameter moves.
+ANCHOR_LAMBDA = 0.0
+ANCHOR_SCALE = (0.01, 0.01, 0.01, 0.01)  # per-parameter "1 unit of move", same order as SMILE_LOWER
+ANCHOR_MAX_AGE_DAYS = 5
+
+IV_SOLVER_MIN_TOTAL_STDEV = 1e-7      # bisection bracket lower bound on sigma*sqrt(T)
 IV_SOLVER_MAX_TOTAL_STDEV = 10.0       # bisection bracket upper bound on sigma*sqrt(T), expanded if needed
 IV_SOLVER_BISECTION_ITERS = 40
 IV_SOLVER_HALLEY_ITERS = 4

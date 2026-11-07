@@ -2,7 +2,8 @@
 
 No pricing/snapshot-domain logic here on purpose — this class only knows
 how to move rows (dataclasses for single-row tables, DataFrames for bulk
-tables) in and out of the five tables defined in schema.py.
+tables) in and out of the tables defined in schema.py. Smile-fit queries
+live in fit_queries.py (mixed in).
 """
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.engine import Engine
 
 from vol_fitter.db import schema
+from vol_fitter.db.fit_queries import FitQueriesMixin
 from vol_fitter.db.models import NameRecord, SnapshotRecord
 from vol_fitter.logging_setup import get_logger
 
@@ -24,7 +26,7 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-class VolFitterRepository:
+class VolFitterRepository(FitQueriesMixin):
     def __init__(self, engine: Engine):
         self.engine = engine
 

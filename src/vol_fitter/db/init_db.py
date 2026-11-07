@@ -5,7 +5,9 @@ Requires a .env with real MySQL credentials already in place (see .env.example).
 """
 from __future__ import annotations
 
-from sqlalchemy import text
+from sqlalchemy import inspect, text
+from sqlalchemy.engine import Engine
+from sqlalchemy.schema import CreateColumn
 
 from vol_fitter import config
 from vol_fitter.db.engine import build_engine, build_server_engine
@@ -13,6 +15,31 @@ from vol_fitter.db.schema import metadata
 from vol_fitter.logging_setup import get_logger
 
 logger = get_logger(__name__)
+
+
+def add_missing_columns(engine: Engine) -> list[str]:
+    """Additive migration: ALTER TABLE ... ADD COLUMN for every schema column a live table lacks.
+
+    create_all() only creates missing tables, never alters existing ones. This
+    never drops or changes columns, so it's safe to run repeatedly.
+    """
+    added = []
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    with engine.begin() as conn:
+        for table in metadata.sorted_tables:
+            if table.name not in existing_tables:
+                continue
+            have = {c["name"] for c in inspector.get_columns(table.name)}
+            for column in table.columns:
+                if column.name in have:
+                    continue
+                ddl = CreateColumn(column).compile(dialect=engine.dialect)
+                conn.execute(text(f"ALTER TABLE `{table.name}` ADD COLUMN {ddl}"))
+                added.append(f"{table.name}.{column.name}")
+    if added:
+        logger.info("Added columns: %s", ", ".join(added))
+    return added
 
 
 def create_database_if_missing(cfg: config.MySQLConfig | None = None) -> None:
@@ -27,6 +54,7 @@ def create_database_if_missing(cfg: config.MySQLConfig | None = None) -> None:
 def create_tables(cfg: config.MySQLConfig | None = None) -> None:
     cfg = cfg or config.MySQLConfig.from_env()
     engine = build_engine(cfg)
+    add_missing_columns(engine)
     metadata.create_all(engine)
     logger.info("All tables created/verified in '%s'", cfg.database)
 

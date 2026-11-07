@@ -93,14 +93,43 @@ maturity_params = Table(
     Column("n_strikes_df", Integer),
     Column("forward_fit_resid", DOUBLE),
     Column("df_fit_resid", DOUBLE),
-    # Phase 2 (per-expiry smile fit) columns: nullable, unpopulated for now.
+    # Per-expiry smile fit (bidask_fit + DeltaSmileModel); NULL until fitted.
     Column("sigma_atm", DOUBLE),
     Column("skew", DOUBLE),
     Column("kappa_call", DOUBLE),
     Column("kappa_put", DOUBLE),
-    Column("smile_fit_rmse", DOUBLE),
-    Column("smile_quality_flag", String(8)),
+    Column("smile_fit_rmse", DOUBLE),          # RMS(model - mid) over two-sided quotes, vol units
+    Column("smile_quality_flag", String(8)),   # ok | failed | miss (some model_miss quotes)
+    Column("fit_status", String(16)),
+    Column("fit_objective", DOUBLE),
+    Column("n_fit_quotes", Integer),
+    Column("pct_inside", DOUBLE),
+    Column("n_outliers", Integer),
+    Column("refit", Boolean),
+    Column("anchor_snapshot_ts", DateTime),    # previous fit used as anchor/warm start (NULL = none)
+    Column("anchor_lambda", DOUBLE),           # lambda after any guard back-off
+    Column("fit_ts", DateTime),
     UniqueConstraint("name_id", "snapshot_ts", "expiry_date", name="uq_maturity_params_name_ts_expiry"),
+)
+
+fit_quotes = Table(
+    "fit_quotes",
+    metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("name_id", Integer, ForeignKey("names.name_id"), nullable=False),
+    Column("snapshot_ts", DateTime, nullable=False),
+    Column("instrument", String(32), nullable=False),
+    Column("expiry_date", Date),
+    Column("delta", DOUBLE),                   # forward call-equivalent delta the model was evaluated at
+    Column("model_iv", DOUBLE),
+    Column("u", DOUBLE),                       # (model - mid) / half-spread; NULL if one-sided
+    Column("v_ask", DOUBLE),
+    Column("v_bid", DOUBLE),
+    Column("x_capped", Boolean),
+    Column("inside", Boolean),
+    Column("classification", String(16)),      # ok | outlier | model_miss | isolated | dropped
+    Column("excluded", Boolean),
+    UniqueConstraint("name_id", "snapshot_ts", "instrument", name="uq_fit_quotes_name_ts_instrument"),
 )
 
 master_params = Table(
