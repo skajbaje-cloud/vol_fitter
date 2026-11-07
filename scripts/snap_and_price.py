@@ -8,7 +8,7 @@ chain-ric only needs to be passed the first time a name is used (or to
 change it); it's then stored in the `names` table and looked up by
 --underlying automatically on later runs. The window-sizing vol comes from
 config.VOL_FIELD (TR.Volatility40D), requested directly on the underlying's
-own RIC -- no separate vol-index ticker needed.
+own RIC.
 
 Requires a running, signed-in LSEG Workspace session and a .env with real
 MySQL credentials (see .env.example); run `python -m vol_fitter.db.init_db`
@@ -20,75 +20,13 @@ import argparse
 import sys
 from pathlib import Path
 
-import pandas as pd
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from vol_fitter.db import schema
 from vol_fitter.db.engine import build_engine
-from vol_fitter.db.models import NameRecord, SnapshotRecord
 from vol_fitter.db.repository import VolFitterRepository
-from vol_fitter.logging_setup import get_logger
-from vol_fitter.pricing.black76_pricer import Black76Pricer
-from vol_fitter.pricing.forward_fitter import ForwardFitter
-from vol_fitter.snapshot.lseg_client import LsegClient
-from vol_fitter.snapshot.snapshot_service import SnapshotService
-from vol_fitter.snapshot.universe_cache import UniverseCache
-
-logger = get_logger(__name__)
+from vol_fitter.orchestration.snapshot_run import UnregisteredNameError, run_snapshot
 
 DEFAULT_UNDERLYING = ".STOXX50E"
-
-_RAW_QUOTE_COLS = [c.name for c in schema.raw_quotes.columns if c.name != "id"]
-_MATURITY_COLS = [
-    "name_id", "snapshot_ts", "expiry_date", "T", "forward", "discount_factor",
-    "n_strikes_forward", "n_strikes_df", "forward_fit_resid", "df_fit_resid",
-]
-
-
-def run(underlying: str, chain_ric: str | None = None) -> None:
-    repo = VolFitterRepository(build_engine())
-    existing = repo.get_name(underlying)
-    chain_ric = chain_ric or (existing.chain_ric if existing else None)
-    if not chain_ric:
-        raise SystemExit(
-            f"'{underlying}' isn't registered yet -- pass --chain-ric once to register it."
-        )
-
-    name_id = repo.get_or_create_name_id(NameRecord(name=underlying, chain_ric=chain_ric))
-
-    with LsegClient() as client:
-        universe_cache = UniverseCache(client, chain_ric, name=underlying)
-        service = SnapshotService(client, universe_cache, underlying)
-        quotes, meta = service.snap()
-
-    forwards = ForwardFitter().fit_all(quotes)
-    priced = Black76Pricer().price_quotes(quotes, forwards)
-
-    priced["name_id"] = name_id
-    priced["snapshot_ts"] = meta.snapshot_ts
-
-    forwards_df = pd.DataFrame([f.__dict__ for f in forwards])
-    forwards_df["name_id"] = name_id
-    forwards_df["snapshot_ts"] = meta.snapshot_ts
-
-    repo.upsert_snapshot(
-        SnapshotRecord(
-            name_id=name_id,
-            snapshot_ts=meta.snapshot_ts,
-            spot=meta.spot,
-            universe_size=meta.universe_size,
-            window_size=meta.window_size,
-            snap_duration_sec=meta.snap_duration_sec,
-            status=meta.status,
-        )
-    )
-    n_quotes = repo.insert_quotes(priced.reindex(columns=_RAW_QUOTE_COLS))
-    n_maturities = repo.upsert_maturity_params(forwards_df.reindex(columns=_MATURITY_COLS))
-    logger.info(
-        "persisted %d quotes and %d maturity rows for %s @ %s",
-        n_quotes, n_maturities, underlying, meta.snapshot_ts,
-    )
 
 
 def _parse_args() -> argparse.Namespace:
@@ -100,4 +38,7 @@ def _parse_args() -> argparse.Namespace:
 
 if __name__ == "__main__":
     args = _parse_args()
-    run(args.underlying, args.chain_ric)
+    try:
+        run_snapshot(VolFitterRepository(build_engine()), args.underlying, args.chain_ric)
+    except UnregisteredNameError as exc:
+        raise SystemExit(str(exc))

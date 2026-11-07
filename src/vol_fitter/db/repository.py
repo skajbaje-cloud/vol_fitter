@@ -6,7 +6,7 @@ tables) in and out of the five tables defined in schema.py.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pandas as pd
 from sqlalchemy import Table, func, select
@@ -119,15 +119,58 @@ class VolFitterRepository:
 
     # ---- reads ----
 
-    def fetch_quotes(self, name_id: int, snapshot_ts: datetime) -> pd.DataFrame:
-        query = select(schema.raw_quotes).where(
-            schema.raw_quotes.c.name_id == name_id,
-            schema.raw_quotes.c.snapshot_ts == snapshot_ts,
+    def list_names(self, active_only: bool = False) -> list[NameRecord]:
+        query = select(schema.names).order_by(schema.names.c.name)
+        if active_only:
+            query = query.where(schema.names.c.active.is_(True))
+        with self.engine.connect() as conn:
+            rows = conn.execute(query).all()
+        return [
+            NameRecord(name=r.name, chain_ric=r.chain_ric, display_name=r.display_name,
+                       active=bool(r.active), name_id=r.name_id)
+            for r in rows
+        ]
+
+    def list_snapshot_timestamps(self, name_id: int) -> list[datetime]:
+        """Snapshots that produced priced data (maturity_params rows), newest first."""
+        mp = schema.maturity_params
+        query = (
+            select(mp.c.snapshot_ts).where(mp.c.name_id == name_id)
+            .group_by(mp.c.snapshot_ts).order_by(mp.c.snapshot_ts.desc())
         )
+        with self.engine.connect() as conn:
+            return [r.snapshot_ts for r in conn.execute(query)]
+
+    def list_maturities(self, name_id: int, snapshot_ts: datetime) -> list[date]:
+        mp = schema.maturity_params
+        query = (
+            select(mp.c.expiry_date)
+            .where(mp.c.name_id == name_id, mp.c.snapshot_ts == snapshot_ts)
+            .order_by(mp.c.expiry_date)
+        )
+        with self.engine.connect() as conn:
+            return [r.expiry_date for r in conn.execute(query)]
+
+    def fetch_quotes(self, name_id: int, snapshot_ts: datetime, expiry_date: date | None = None) -> pd.DataFrame:
+        rq = schema.raw_quotes
+        query = select(rq).where(rq.c.name_id == name_id, rq.c.snapshot_ts == snapshot_ts)
+        if expiry_date is not None:
+            query = query.where(rq.c.expiry_date == expiry_date)
         return pd.read_sql(query, self.engine)
 
-    def fetch_maturity_params(self, name_id: int, snapshot_ts: datetime | None = None) -> pd.DataFrame:
-        query = select(schema.maturity_params).where(schema.maturity_params.c.name_id == name_id)
+    def fetch_maturity_params(
+        self, name_id: int, snapshot_ts: datetime | None = None, expiry_date: date | None = None,
+    ) -> pd.DataFrame:
+        mp = schema.maturity_params
+        query = select(mp).where(mp.c.name_id == name_id)
         if snapshot_ts is not None:
-            query = query.where(schema.maturity_params.c.snapshot_ts == snapshot_ts)
+            query = query.where(mp.c.snapshot_ts == snapshot_ts)
+        if expiry_date is not None:
+            query = query.where(mp.c.expiry_date == expiry_date)
         return pd.read_sql(query, self.engine)
+
+    def fetch_snapshot(self, name_id: int, snapshot_ts: datetime) -> dict | None:
+        s = schema.snapshots
+        with self.engine.connect() as conn:
+            row = conn.execute(select(s).where(s.c.name_id == name_id, s.c.snapshot_ts == snapshot_ts)).first()
+        return dict(row._mapping) if row else None

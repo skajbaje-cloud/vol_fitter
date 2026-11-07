@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -33,6 +34,10 @@ class MySQLConfig:
 
 
 LOG_LEVEL = os.environ.get("VOL_FITTER_LOG_LEVEL", "INFO")
+
+# ---- web ----
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+FRONTEND_DIST = Path(os.environ.get("VOL_FITTER_FRONTEND_DIST", _REPO_ROOT / "frontend" / "dist"))
 
 # ---- snapshot hyperparameters ----
 MAX_SNAP = 4000                       # largest safe get_data batch (see scripts/batch_probe.py)

@@ -8,3 +8,5 @@ universe_*.csv
 .env
 *.egg-info/
 .pytest_cache/
+frontend/node_modules/
+frontend/dist/

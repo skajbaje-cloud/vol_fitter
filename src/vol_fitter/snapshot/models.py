@@ -38,3 +38,4 @@ class SnapshotMeta:
     window_size: int
     snap_duration_sec: float
     status: str = "ok"
+    window_vol: float | None = None  # the realized vol used to size the std-dev window

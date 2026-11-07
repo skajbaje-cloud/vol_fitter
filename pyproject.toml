@@ -12,6 +12,8 @@ dependencies = [
     "sqlalchemy",
     "pymysql",
     "python-dotenv",
+    "fastapi",
+    "uvicorn[standard]",
 ]
 
 [project.optional-dependencies]

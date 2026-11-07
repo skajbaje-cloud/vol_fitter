@@ -64,12 +64,15 @@ class SnapshotService:
 
         meta = SnapshotMeta(
             name=self.underlying,
-            snapshot_ts=pd.Timestamp.now(),
+            # Whole seconds: MySQL DATETIME rounds fractions, which would make the
+            # stored timestamp differ from the one reported back to callers.
+            snapshot_ts=pd.Timestamp.now().floor("s"),
             spot=float(spot),
             universe_size=len(universe),
             window_size=len(quotes_df),
             snap_duration_sec=time.time() - t0,
             status="ok",
+            window_vol=vol,
         )
         return quotes_df, meta
 
