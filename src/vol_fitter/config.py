@@ -40,6 +40,10 @@ UNIVERSE_MAX_AGE_DAYS = 7
 CALL_SD_WINDOW = (-1.0, 4.0)           # std-dev window around spot, calls
 PUT_SD_WINDOW = (-4.0, 1.0)            # std-dev window around spot, puts
 
+# 40-day realized vol, requestable directly on any underlying RIC (equity,
+# ETF, or index) -- used only to size the std-dev window, not for pricing.
+VOL_FIELD = "TR.Volatility40D"
+
 # ---- pricing hyperparameters ----
 # Strike-selection band for the forward (F) LAD regression stage, in
 # abs(log-moneyness) = |ln(K/F_guess)|. None = use every strike available.

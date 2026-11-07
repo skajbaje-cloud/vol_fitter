@@ -2,11 +2,13 @@
 
 Usage:
     python scripts/snap_and_price.py --underlying .STOXX50E
-    python scripts/snap_and_price.py --underlying .STOXX50E --chain-ric "0#STXE*.EX" --vol-ric .V6I3
+    python scripts/snap_and_price.py --underlying .STOXX50E --chain-ric "0#STXE*.EX"
 
-chain-ric/vol-ric only need to be passed the first time a name is used (or
-to change them); they're then stored in the `names` table and looked up by
---underlying automatically on later runs.
+chain-ric only needs to be passed the first time a name is used (or to
+change it); it's then stored in the `names` table and looked up by
+--underlying automatically on later runs. The window-sizing vol comes from
+config.VOL_FIELD (TR.Volatility40D), requested directly on the underlying's
+own RIC -- no separate vol-index ticker needed.
 
 Requires a running, signed-in LSEG Workspace session and a .env with real
 MySQL credentials (see .env.example); run `python -m vol_fitter.db.init_db`
@@ -44,24 +46,20 @@ _MATURITY_COLS = [
 ]
 
 
-def run(underlying: str, chain_ric: str | None = None, vol_ric: str | None = None) -> None:
+def run(underlying: str, chain_ric: str | None = None) -> None:
     repo = VolFitterRepository(build_engine())
     existing = repo.get_name(underlying)
     chain_ric = chain_ric or (existing.chain_ric if existing else None)
-    vol_ric = vol_ric or (existing.vol_ric if existing else None)
-    if not chain_ric or not vol_ric:
+    if not chain_ric:
         raise SystemExit(
-            f"'{underlying}' isn't registered yet (or is missing chain_ric/vol_ric) -- "
-            "pass --chain-ric and --vol-ric once to register it."
+            f"'{underlying}' isn't registered yet -- pass --chain-ric once to register it."
         )
 
-    name_id = repo.get_or_create_name_id(
-        NameRecord(name=underlying, chain_ric=chain_ric, vol_ric=vol_ric)
-    )
+    name_id = repo.get_or_create_name_id(NameRecord(name=underlying, chain_ric=chain_ric))
 
     with LsegClient() as client:
         universe_cache = UniverseCache(client, chain_ric, name=underlying)
-        service = SnapshotService(client, universe_cache, underlying, vol_ric)
+        service = SnapshotService(client, universe_cache, underlying)
         quotes, meta = service.snap()
 
     forwards = ForwardFitter().fit_all(quotes)
@@ -97,10 +95,9 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--underlying", default=DEFAULT_UNDERLYING)
     parser.add_argument("--chain-ric", default=None, help="only needed the first time this name is used")
-    parser.add_argument("--vol-ric", default=None, help="only needed the first time this name is used")
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = _parse_args()
-    run(args.underlying, args.chain_ric, args.vol_ric)
+    run(args.underlying, args.chain_ric)

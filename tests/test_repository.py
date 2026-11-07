@@ -36,14 +36,13 @@ def repo():
 
 
 def test_get_or_create_name_id_is_idempotent_and_refreshes_fields(repo):
-    first = repo.get_or_create_name_id(NameRecord(name="TEST.NAME", chain_ric="0#TEST*.EX", vol_ric=".TESTVOL"))
-    second = repo.get_or_create_name_id(NameRecord(name="TEST.NAME", chain_ric="0#TEST2*.EX", vol_ric=".TESTVOL2"))
+    first = repo.get_or_create_name_id(NameRecord(name="TEST.NAME", chain_ric="0#TEST*.EX"))
+    second = repo.get_or_create_name_id(NameRecord(name="TEST.NAME", chain_ric="0#TEST2*.EX"))
     assert first == second
 
     fetched = repo.get_name("TEST.NAME")
     assert fetched.name_id == first
     assert fetched.chain_ric == "0#TEST2*.EX"
-    assert fetched.vol_ric == ".TESTVOL2"
 
 
 def test_get_name_returns_none_for_unknown_name(repo):

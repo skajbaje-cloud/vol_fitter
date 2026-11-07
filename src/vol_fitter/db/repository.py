@@ -31,19 +31,17 @@ class VolFitterRepository:
     # ---- names (control table) ----
 
     def get_or_create_name_id(self, record: NameRecord) -> int:
-        """Insert the name if new, or refresh its chain_ric/vol_ric/display_name/active
+        """Insert the name if new, or refresh its chain_ric/display_name/active
         if it already exists; either way, returns its name_id."""
         stmt = mysql_insert(schema.names).values(
             name=record.name,
             chain_ric=record.chain_ric,
-            vol_ric=record.vol_ric,
             display_name=record.display_name,
             active=record.active,
             created_ts=_utcnow(),
         )
         stmt = stmt.on_duplicate_key_update(
             chain_ric=stmt.inserted.chain_ric,
-            vol_ric=stmt.inserted.vol_ric,
             display_name=stmt.inserted.display_name,
             active=stmt.inserted.active,
             # MySQL trick to get the existing row's PK back out of an
@@ -62,7 +60,7 @@ class VolFitterRepository:
         if row is None:
             return None
         return NameRecord(
-            name=row.name, chain_ric=row.chain_ric, vol_ric=row.vol_ric,
+            name=row.name, chain_ric=row.chain_ric,
             display_name=row.display_name, active=row.active, name_id=row.name_id,
         )
 

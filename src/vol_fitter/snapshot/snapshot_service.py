@@ -29,18 +29,18 @@ class SnapshotService:
         client: LsegClient,
         universe_cache: UniverseCache,
         underlying: str,
-        vol_ric: str,
         call_sd_window: tuple[float, float] = config.CALL_SD_WINDOW,
         put_sd_window: tuple[float, float] = config.PUT_SD_WINDOW,
         max_snap: int = config.MAX_SNAP,
+        vol_field: str = config.VOL_FIELD,
     ):
         self.client = client
         self.universe_cache = universe_cache
         self.underlying = underlying
-        self.vol_ric = vol_ric
         self.call_sd_window = call_sd_window
         self.put_sd_window = put_sd_window
         self.max_snap = max_snap
+        self.vol_field = vol_field
 
     def snap(self) -> tuple[pd.DataFrame, SnapshotMeta]:
         t0 = time.time()
@@ -74,10 +74,19 @@ class SnapshotService:
         return quotes_df, meta
 
     def _spot_and_vol(self) -> tuple[float, float]:
-        d = self.client.get_with_retry([self.underlying, self.vol_ric], ["TRDPRC_1"]).set_index("Instrument")
-        spot, vol = d.loc[self.underlying, "TRDPRC_1"], d.loc[self.vol_ric, "TRDPRC_1"]
+        # One field for a last price, one for a realized-vol content field --
+        # both requestable directly on the underlying's own RIC, so this
+        # works the same way for an index, an ETF, or a single stock.
+        # TR.* content fields come back under a human-readable display
+        # column (e.g. "Volatility - 40 days"), not their field code, unlike
+        # legacy real-time fields like TRDPRC_1 -- so find it by elimination
+        # rather than assuming the column is literally named self.vol_field.
+        d = self.client.get_with_retry([self.underlying], ["TRDPRC_1", self.vol_field])
+        vol_col = next(c for c in d.columns if c not in ("Instrument", "TRDPRC_1"))
+        spot, vol = d.loc[0, "TRDPRC_1"], d.loc[0, vol_col]
         if pd.isna(spot) or pd.isna(vol):
             raise RuntimeError(f"missing spot ({spot}) or vol ({vol}) for {self.underlying}")
+        # TR.Volatility40D comes back as a percentage (e.g. 18.2 for 18.2%).
         return float(spot), float(vol) / 100.0
 
     def _in_window(self, universe: pd.DataFrame, spot: float, vol: float) -> pd.DataFrame:

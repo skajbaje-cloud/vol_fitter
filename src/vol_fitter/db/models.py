@@ -14,7 +14,6 @@ from datetime import datetime
 class NameRecord:
     name: str
     chain_ric: str | None = None
-    vol_ric: str | None = None
     display_name: str | None = None
     active: bool = True
     name_id: int | None = None  # set when read back from the database, ignored on insert
