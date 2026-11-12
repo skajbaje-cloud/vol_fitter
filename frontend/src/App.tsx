@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "./api";
 import { fmtTs } from "./lib/format";
 import { AnalysisPage } from "./pages/AnalysisPage";
 import { FitsPage } from "./pages/FitsPage";
 import { GridPage } from "./pages/GridPage";
+import { LabPage } from "./pages/LabPage";
 import { PlotsPage } from "./pages/PlotsPage";
+import { SchedulePage } from "./pages/SchedulePage";
 import { SnapshotPage } from "./pages/SnapshotPage";
 import type { NameOut, Route, SeriesSpec } from "./types";
 
@@ -14,9 +16,11 @@ const icon = (d: string) => (
 const NAV: { route: Route; label: string; icon: ReactNode; soon?: boolean }[] = [
   { route: "plots", label: "Plots", icon: icon("M3 17l6-6 4 4 8-8M15 7h6v6") },
   { route: "grid", label: "Grid", icon: icon("M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z") },
+  { route: "lab", label: "Smile Lab", icon: icon("M4 6h16M4 12h16M4 18h16M9 4v4M15 10v4M7 16v4") },
   { route: "snapshot", label: "Snapshot", icon: icon("M5 12a7 7 0 1 1 2.05 4.95M5 12V7m0 5h5") },
-  { route: "fits", label: "Fits", icon: icon("M4 19V5m0 14h16M8 15l3-4 3 3 4-6"), soon: true },
-  { route: "analysis", label: "Analysis", icon: icon("M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.3-4.3"), soon: true },
+  { route: "schedule", label: "Schedule", icon: icon("M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0") },
+  { route: "fits", label: "Fits", icon: icon("M4 19V5m0 14h16M8 15l3-4 3 3 4-6") },
+  { route: "analysis", label: "Analysis", icon: icon("M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.3-4.3") },
 ];
 const ROUTES = NAV.map((n) => n.route);
 const routeFromHash = (): Route => (ROUTES.includes(location.hash.slice(1) as Route) ? (location.hash.slice(1) as Route) : "plots");
@@ -43,11 +47,11 @@ export function App() {
 
   const loadNames = useCallback(async () => {
     try {
-      const n = await api.names();
-      setNames(n);
-      const stamps = await Promise.all(n.map(async (x) => ({ name: x.name, ts: (await api.snapshots(x.name))[0] ?? "" })));
-      setLatest(stamps.filter((s) => s.ts).sort((a, b) => b.ts.localeCompare(a.ts))[0] ?? null);
-      return n;
+      const all = await api.names();
+      setNames(all);
+      const stamps = all.filter((x) => x.last_snapshot_ts).map((x) => ({ name: x.name, ts: x.last_snapshot_ts! }));
+      setLatest(stamps.sort((a, b) => b.ts.localeCompare(a.ts))[0] ?? null);
+      return all.filter((x) => x.last_snapshot_ts);
     } catch (e) {
       setError(`Can't reach the API: ${(e as Error).message}`);
       return null;
@@ -82,14 +86,18 @@ export function App() {
     location.hash = "plots";
   }, []);
 
+  // Only names with priced data are worth offering on the analysis pages; Snapshot manages them all.
+  const snapped = useMemo(() => (names ?? []).filter((n) => n.last_snapshot_ts), [names]);
   const pages: Record<Route, () => ReactNode> = {
     plots: () => (series === null ? <div className="muted empty">Loading…</div>
-      : series.length ? <PlotsPage names={names!} series={series} setSeries={updateSeries} resetKey={plotsResetKey} />
+      : series.length ? <PlotsPage names={snapped} series={series} setSeries={updateSeries} resetKey={plotsResetKey} />
       : <div className="muted empty">No priced snapshots yet. Run one from the Snapshot page.</div>),
-    grid: () => <GridPage names={names!} onOpenInPlots={openInPlots} />,
-    snapshot: () => <SnapshotPage names={names!} onSnapshotsChanged={refreshAfterRun} />,
-    fits: () => <FitsPage names={names!} />,
-    analysis: () => <AnalysisPage />,
+    grid: () => <GridPage names={snapped} onOpenInPlots={openInPlots} />,
+    lab: () => <LabPage names={snapped} />,
+    snapshot: () => <SnapshotPage names={names!} onNamesChanged={refreshAfterRun} />,
+    schedule: () => <SchedulePage names={names!} />,
+    fits: () => <FitsPage names={snapped} onOpenInPlots={openInPlots} />,
+    analysis: () => <AnalysisPage names={snapped} onOpenInPlots={openInPlots} />,
   };
 
   return (

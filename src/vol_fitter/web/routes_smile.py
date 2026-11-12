@@ -7,12 +7,14 @@ import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from vol_fitter.db.repository import VolFitterRepository
+from vol_fitter.orchestration.fit_run import default_fit_config
+from vol_fitter.smile import FitFrameBuilder
 from vol_fitter.web.deps import get_repo, require_name
 from vol_fitter.web.schemas import MaturityParamsOut, SmileOut, SmileQuotes
 
 router = APIRouter(prefix="/api", tags=["smile"])
 
-_QUOTE_FIELDS = ["strike", "is_call", "bid", "ask", "bid_iv", "ask_iv", "bid_delta", "ask_delta"]
+_QUOTE_FIELDS = ["strike", "is_call", "bid", "ask", "bid_iv", "ask_iv", "bid_delta", "ask_delta", "fwd_delta"]
 
 
 def _nullable(values: pd.Series) -> list:
@@ -36,12 +38,15 @@ def get_smile(
 
     p = {k: v for k, v in zip(params.columns, _nullable(params.iloc[0]))}
     quotes["is_call"] = quotes["is_call"].astype(bool)
+    DF = p.get("discount_factor")
+    quotes["fwd_delta"] = FitFrameBuilder().forward_call_delta(quotes, DF if DF is not None else float("nan"))
     return SmileOut(
         name=name,
         snapshot_ts=snapshot_ts,
         expiry=expiry,
         T=p.get("T"),
         spot=snapshot.get("spot"),
+        h_min=default_fit_config().h_min,
         params=MaturityParamsOut(**{k: p.get(k) for k in MaturityParamsOut.model_fields}),
         quotes=SmileQuotes(**{f: _nullable(quotes[f]) if f != "is_call" else quotes[f].tolist() for f in _QUOTE_FIELDS}),
     )

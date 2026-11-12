@@ -21,7 +21,17 @@ def get_repo() -> VolFitterRepository:
 
 
 def get_job_queue(request: Request) -> JobQueue:
+    """The LSEG queue: snapshots, look-ups, chain checks."""
     return request.app.state.job_queue
+
+
+def get_fit_queue(request: Request) -> JobQueue:
+    """The fit queue: smile fits read stored quotes only, so they never wait behind LSEG work."""
+    return request.app.state.fit_queue
+
+
+def get_all_queues(request: Request) -> list[JobQueue]:
+    return [request.app.state.job_queue, request.app.state.fit_queue]
 
 
 def require_name(repo: VolFitterRepository, name: str) -> NameRecord:

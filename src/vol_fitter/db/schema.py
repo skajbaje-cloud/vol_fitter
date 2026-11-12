@@ -15,8 +15,10 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     MetaData,
+    SmallInteger,
     String,
     Table,
+    Time,
     UniqueConstraint,
 )
 
@@ -35,6 +37,9 @@ names = Table(
     Column("chain_ric", String(64)),
     Column("display_name", String(128)),
     Column("active", Boolean, default=True),
+    Column("group_name", String(32)),        # free-form tag for bulk selection, e.g. "US index"
+    Column("expiry_filter", String(16)),     # "all" (default) | "monthly": which listed expiries to snap
+    Column("timezone", String(64)),          # IANA zone the schedule's local times are in; NULL = never fires
     Column("created_ts", DateTime),
 )
 
@@ -146,4 +151,46 @@ master_params = Table(
     Column("kappa_put_level", DOUBLE),
     Column("fit_rmse", DOUBLE),
     UniqueConstraint("name_id", "snapshot_ts", name="uq_master_params_name_ts"),
+)
+
+# ---- snapshot schedule ----
+
+snap_schedules = Table(
+    "snap_schedules",
+    metadata,
+    Column("name_id", Integer, ForeignKey("names.name_id"), primary_key=True),
+    Column("days", SmallInteger, nullable=False, default=31),   # bitmask Mon=1 .. Sun=64; 31 = Mon-Fri
+    Column("enabled", Boolean, nullable=False, default=True),
+    Column("updated_ts", DateTime),
+)
+
+snap_slots = Table(
+    "snap_slots",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("name_id", Integer, ForeignKey("names.name_id"), nullable=False),
+    Column("local_time", Time, nullable=False),               # wall-clock time in names.timezone
+    UniqueConstraint("name_id", "local_time", name="uq_snap_slots_name_time"),
+)
+
+schedule_runs = Table(
+    "schedule_runs",
+    metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("name_id", Integer, ForeignKey("names.name_id"), nullable=False),
+    Column("scheduled_for_utc", DateTime, nullable=False),
+    Column("local_label", String(32)),                        # e.g. "15:45 EST", as the user set it
+    Column("status", String(16), nullable=False),             # queued | skipped_busy | missed | done | failed
+    Column("job_id", Integer),
+    Column("reason", String(255)),
+    Column("created_ts", DateTime),
+    # The guard against double-firing: a firing is claimed by inserting this row.
+    UniqueConstraint("name_id", "scheduled_for_utc", name="uq_schedule_runs_name_time"),
+)
+
+app_settings = Table(
+    "app_settings",
+    metadata,
+    Column("key", String(64), primary_key=True),
+    Column("value", String(255)),
 )

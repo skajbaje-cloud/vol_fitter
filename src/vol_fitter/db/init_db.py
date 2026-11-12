@@ -5,14 +5,15 @@ Requires a .env with real MySQL credentials already in place (see .env.example).
 """
 from __future__ import annotations
 
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect, select, text, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.schema import CreateColumn
 
 from vol_fitter import config
 from vol_fitter.db.engine import build_engine, build_server_engine
-from vol_fitter.db.schema import metadata
+from vol_fitter.db.schema import metadata, names
 from vol_fitter.logging_setup import get_logger
+from vol_fitter.scheduling.tz_guess import guess_timezone
 
 logger = get_logger(__name__)
 
@@ -42,6 +43,20 @@ def add_missing_columns(engine: Engine) -> list[str]:
     return added
 
 
+def fill_missing_timezones(engine: Engine) -> list[str]:
+    """Guess names.timezone from the RIC wherever it's still NULL; never overwrites a set zone."""
+    filled = []
+    with engine.begin() as conn:
+        for row in conn.execute(select(names.c.name_id, names.c.name).where(names.c.timezone.is_(None))).all():
+            zone = guess_timezone(row.name)
+            if zone:
+                conn.execute(update(names).where(names.c.name_id == row.name_id).values(timezone=zone))
+                filled.append(f"{row.name}={zone}")
+    if filled:
+        logger.info("Guessed time zones: %s", ", ".join(filled))
+    return filled
+
+
 def create_database_if_missing(cfg: config.MySQLConfig | None = None) -> None:
     cfg = cfg or config.MySQLConfig.from_env()
     server_engine = build_server_engine(cfg)
@@ -56,6 +71,7 @@ def create_tables(cfg: config.MySQLConfig | None = None) -> None:
     engine = build_engine(cfg)
     add_missing_columns(engine)
     metadata.create_all(engine)
+    fill_missing_timezones(engine)
     logger.info("All tables created/verified in '%s'", cfg.database)
 
 

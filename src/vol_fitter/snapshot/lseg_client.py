@@ -43,6 +43,13 @@ class LsegClient:
             out.extend(self.expand_chain(ric) if ric.startswith("0#") else [ric])
         return out
 
+    def search(self, **kwargs) -> pd.DataFrame:
+        """LSEG discovery search (e.g. view, filter, select, top); empty frame when nothing matches."""
+        from lseg.data.discovery import Views
+
+        view = kwargs.pop("view", "SEARCH_ALL")
+        return self._ld.discovery.search(view=getattr(Views, view), **kwargs)
+
     def get_with_retry(self, rics: list[str], fields: list[str]) -> pd.DataFrame:
         last_exc: Exception | None = None
         for attempt in range(self.tries):

@@ -5,7 +5,7 @@ const ICON: Record<JobOut["status"], string> = { queued: "", running: "", done: 
 
 export function JobTable({ jobs }: { jobs: JobOut[] }) {
   if (!jobs.length) {
-    return <div className="muted empty">No snapshot runs since the server started. Pick an underlying above and run one.</div>;
+    return <div className="muted empty">No jobs since the server started. Tick names above and snapshot them, or add new ones.</div>;
   }
   return (
     <div className="table-scroll">
@@ -19,7 +19,9 @@ export function JobTable({ jobs }: { jobs: JobOut[] }) {
         <tbody>
           {jobs.map((j) => (
             <tr key={j.id}>
-              <td className="name">{j.name}</td>
+              <td className="name">{j.kind !== "snapshot" && <span className="tag">{j.kind === "lookup" ? "look-up" : "chain check"}</span>}
+                {j.origin === "schedule" && <span className="tag" title="Started by the schedule">scheduled</span>}{j.name}
+                {j.check && <div className="muted job-sub">{j.check.n_options.toLocaleString()} options · {j.check.n_expiries} expiries</div>}</td>
               <td>
                 <span className={`pill ${j.status}`}><span className="led" />{ICON[j.status]} {j.status}</span>
                 {j.error && <div className="error-text">{j.error}</div>}

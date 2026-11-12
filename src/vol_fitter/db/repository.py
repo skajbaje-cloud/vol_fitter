@@ -2,69 +2,33 @@
 
 No pricing/snapshot-domain logic here on purpose — this class only knows
 how to move rows (dataclasses for single-row tables, DataFrames for bulk
-tables) in and out of the tables defined in schema.py. Smile-fit queries
-live in fit_queries.py (mixed in).
+tables) in and out of the tables defined in schema.py. Names live in
+name_queries.py, smile-fit queries in fit_queries.py and the snapshot
+schedule in schedule_queries.py (all mixed in).
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 
 import pandas as pd
-from sqlalchemy import Table, func, select
+from sqlalchemy import Table, select
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.engine import Engine
 
 from vol_fitter.db import schema
 from vol_fitter.db.fit_queries import FitQueriesMixin
-from vol_fitter.db.models import NameRecord, SnapshotRecord
+from vol_fitter.db.name_queries import NameQueriesMixin
+from vol_fitter.db.schedule_queries import ScheduleQueriesMixin
+from vol_fitter.db.models import SnapshotRecord
 from vol_fitter.logging_setup import get_logger
 
 logger = get_logger(__name__)
 
 
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
 
-
-class VolFitterRepository(FitQueriesMixin):
+class VolFitterRepository(NameQueriesMixin, FitQueriesMixin, ScheduleQueriesMixin):
     def __init__(self, engine: Engine):
         self.engine = engine
-
-    # ---- names (control table) ----
-
-    def get_or_create_name_id(self, record: NameRecord) -> int:
-        """Insert the name if new, or refresh its chain_ric/display_name/active
-        if it already exists; either way, returns its name_id."""
-        stmt = mysql_insert(schema.names).values(
-            name=record.name,
-            chain_ric=record.chain_ric,
-            display_name=record.display_name,
-            active=record.active,
-            created_ts=_utcnow(),
-        )
-        stmt = stmt.on_duplicate_key_update(
-            chain_ric=stmt.inserted.chain_ric,
-            display_name=stmt.inserted.display_name,
-            active=stmt.inserted.active,
-            # MySQL trick to get the existing row's PK back out of an
-            # INSERT ... ON DUPLICATE KEY UPDATE via result.lastrowid.
-            name_id=func.last_insert_id(schema.names.c.name_id),
-        )
-        with self.engine.begin() as conn:
-            result = conn.execute(stmt)
-            name_id = result.lastrowid
-        logger.info("Registered/updated name '%s' -> name_id=%s", record.name, name_id)
-        return name_id
-
-    def get_name(self, name: str) -> NameRecord | None:
-        with self.engine.connect() as conn:
-            row = conn.execute(select(schema.names).where(schema.names.c.name == name)).first()
-        if row is None:
-            return None
-        return NameRecord(
-            name=row.name, chain_ric=row.chain_ric,
-            display_name=row.display_name, active=row.active, name_id=row.name_id,
-        )
 
     # ---- snapshots (one row per name per snapshot) ----
 
@@ -120,18 +84,6 @@ class VolFitterRepository(FitQueriesMixin):
         return len(records)
 
     # ---- reads ----
-
-    def list_names(self, active_only: bool = False) -> list[NameRecord]:
-        query = select(schema.names).order_by(schema.names.c.name)
-        if active_only:
-            query = query.where(schema.names.c.active.is_(True))
-        with self.engine.connect() as conn:
-            rows = conn.execute(query).all()
-        return [
-            NameRecord(name=r.name, chain_ric=r.chain_ric, display_name=r.display_name,
-                       active=bool(r.active), name_id=r.name_id)
-            for r in rows
-        ]
 
     def list_snapshot_timestamps(self, name_id: int) -> list[datetime]:
         """Snapshots that produced priced data (maturity_params rows), newest first."""

@@ -86,6 +86,21 @@ def run_unfitted(repo: VolFitterRepository, underlying: str, anchor: bool = True
     return [run_fit(repo, underlying, ts, anchor=anchor) for ts in repo.list_unfitted_snapshots(rec.name_id)]
 
 
+def run_fit_job(repo: VolFitterRepository, underlying: str, mode: str,
+                snapshot_ts: str | datetime | None = None, anchor: bool = True) -> list[FitRunResult]:
+    """Entry point for the web fit queue. mode: "latest" | "unfitted" | "snapshot" (needs snapshot_ts)."""
+    if mode == "unfitted":
+        return run_unfitted(repo, underlying, anchor=anchor)
+    if mode == "snapshot":
+        if snapshot_ts is None:
+            raise ValueError("mode 'snapshot' needs a snapshot_ts")
+        ts = datetime.fromisoformat(snapshot_ts) if isinstance(snapshot_ts, str) else snapshot_ts
+        return [run_fit(repo, underlying, ts, anchor=anchor)]
+    if mode == "latest":
+        return [run_fit(repo, underlying, None, anchor=anchor)]
+    raise ValueError(f"unknown fit mode '{mode}'")
+
+
 def _summary(expiry, res: FitResult, anchor_ts) -> ExpiryFitSummary:
     cls = res.quotes["classification"]
     return ExpiryFitSummary(

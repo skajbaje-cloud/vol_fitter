@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 
 import pandas as pd
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 
 from vol_fitter.db import schema
 
@@ -52,3 +52,23 @@ class FitQueriesMixin:
         )
         with self.engine.connect() as conn:
             return [r.snapshot_ts for r in conn.execute(query)]
+
+    def fit_coverage(self) -> pd.DataFrame:
+        """One row per (name, snapshot): how many expiries are fitted, how well, and when."""
+        mp, n = schema.maturity_params, schema.names
+        query = (
+            select(
+                n.c.name, mp.c.snapshot_ts,
+                func.count().label("n_expiries"),
+                func.count(mp.c.fit_status).label("n_fitted"),
+                func.sum(case((mp.c.fit_status == "ok", 1), else_=0)).label("n_ok"),
+                func.avg(mp.c.pct_inside).label("mean_pct_inside"),
+                func.min(mp.c.pct_inside).label("min_pct_inside"),
+                func.sum(mp.c.n_outliers).label("n_outliers"),
+                func.max(mp.c.fit_ts).label("last_fit_ts"),
+            )
+            .select_from(mp.join(n, n.c.name_id == mp.c.name_id))
+            .group_by(n.c.name, mp.c.snapshot_ts)
+            .order_by(n.c.name, mp.c.snapshot_ts.desc())
+        )
+        return pd.read_sql(query, self.engine)

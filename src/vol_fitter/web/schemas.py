@@ -2,17 +2,11 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-
-class NameOut(BaseModel):
-    name_id: int
-    name: str
-    chain_ric: str | None
-    display_name: str | None
-    active: bool
+from vol_fitter.web.schemas_fits import FitSnapshotSummaryOut
+from vol_fitter.web.schemas_names import ChainCheckOut, NameLookupOut, NameOut  # noqa: F401  (re-exported)
 
 
 class SmileQuotes(BaseModel):
@@ -25,6 +19,7 @@ class SmileQuotes(BaseModel):
     ask_iv: list[float | None]
     bid_delta: list[float | None]
     ask_delta: list[float | None]
+    fwd_delta: list[float | None]    # forward call-equivalent delta the smile model is evaluated at
 
 
 class MaturityParamsOut(BaseModel):
@@ -40,6 +35,10 @@ class MaturityParamsOut(BaseModel):
     kappa_put: float | None
     smile_fit_rmse: float | None
     smile_quality_flag: str | None
+    fit_status: str | None = None
+    pct_inside: float | None = None
+    n_fit_quotes: int | None = None
+    n_outliers: int | None = None
 
 
 class SmileOut(BaseModel):
@@ -48,14 +47,13 @@ class SmileOut(BaseModel):
     expiry: date
     T: float | None
     spot: float | None
+    h_min: float                     # bid-ask fitter's half-spread floor, for "inside" checks client-side
     params: MaturityParamsOut
     quotes: SmileQuotes
 
 
 class SnapshotRunRequest(BaseModel):
-    scope: Literal["single", "universe"] = "single"
-    underlying: str | None = None
-    chain_ric: str | None = None
+    names: list[str] = Field(min_length=1, max_length=500)   # registered names, snapped in this order
 
 
 class JobOut(BaseModel):
@@ -67,6 +65,7 @@ class JobOut(BaseModel):
     started_at: datetime | None
     finished_at: datetime | None
     error: str | None
+    origin: str = "manual"
     snapshot_ts: datetime | None = None
     spot: float | None = None
     window_vol: float | None = None
@@ -74,3 +73,6 @@ class JobOut(BaseModel):
     n_quotes: int | None = None
     n_maturities: int | None = None
     duration_sec: float | None = None
+    lookup: list[NameLookupOut] | None = None    # kind == "lookup"
+    check: ChainCheckOut | None = None           # kind == "check"
+    fit: list[FitSnapshotSummaryOut] | None = None   # kind == "fit": one entry per snapshot fitted

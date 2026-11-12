@@ -22,6 +22,23 @@ def test_get_name_returns_none_for_unknown_name(repo):
     assert repo.get_name("NOPE.UNKNOWN") is None
 
 
+def test_ensure_name_id_leaves_existing_settings_alone(repo):
+    name_id = repo.get_or_create_name_id(NameRecord(
+        name="TEST.KEEP", chain_ric="0#KEEP*.U", display_name="Keep", active=False,
+        group_name="US single", expiry_filter="monthly"))
+    assert repo.ensure_name_id("TEST.KEEP", chain_ric="0#OTHER*.U") == name_id
+    kept = repo.get_name("TEST.KEEP")
+    assert (kept.chain_ric, kept.display_name, kept.active, kept.group_name, kept.expiry_filter) ==         ("0#KEEP*.U", "Keep", False, "US single", "monthly")
+
+
+def test_update_name_changes_only_given_fields(repo):
+    repo.get_or_create_name_id(NameRecord(name="TEST.EDIT", chain_ric="0#EDIT*.U", group_name="A"))
+    rec = repo.update_name("TEST.EDIT", active=False, expiry_filter="monthly")
+    assert (rec.active, rec.expiry_filter, rec.group_name, rec.chain_ric) == (False, "monthly", "A", "0#EDIT*.U")
+    with pytest.raises(ValueError):
+        repo.update_name("TEST.EDIT", name_id=999)
+
+
 def test_snapshot_and_quotes_roundtrip(repo):
     name_id = repo.get_or_create_name_id(NameRecord(name="TEST.NAME2"))
     ts = datetime(2027, 1, 1, 12, 0, 0)
@@ -134,3 +151,25 @@ def test_fit_quotes_roundtrip(repo):
     assert repo.upsert_fit_quotes(df) == 1
     got = repo.fetch_fit_quotes(name_id, ts)
     assert len(got) == 1 and pd.isna(got.iloc[0]["u"]) and got.iloc[0]["classification"] == "ok"
+
+
+def test_schedule_tables_roundtrip(repo):
+    from datetime import time
+    name_id = repo.get_or_create_name_id(NameRecord(name="TEST.SCHED", timezone="Europe/Berlin"))
+    repo.replace_schedules([(name_id, [time(9, 45), time(17, 15)], 3, True)])
+    entry = next(e for e in repo.list_schedules() if e.name == "TEST.SCHED")
+    assert entry.times == (time(9, 45), time(17, 15)) and entry.days == 3 and entry.timezone == "Europe/Berlin"
+    repo.replace_schedules([(name_id, [time(10, 0)], 31, False)])
+    entry = next(e for e in repo.list_schedules() if e.name == "TEST.SCHED")
+    assert entry.times == (time(10, 0),) and entry.enabled is False
+
+    ts = datetime(2031, 1, 6, 9, 0)
+    first = repo.insert_run(name_id, ts, "10:00 CET", "queued")
+    assert first is not None and repo.insert_run(name_id, ts, "10:00 CET", "queued") is None
+    repo.update_run(first, status="done")
+    assert repo.last_runs()[name_id].status == "done"
+
+    repo.set_setting("test_key", "a")
+    repo.set_setting("test_key", "b")
+    assert repo.get_setting("test_key") == "b" and repo.get_setting("missing", "dflt") == "dflt"
+    assert repo.update_name("TEST.SCHED", timezone="Europe/London").timezone == "Europe/London"

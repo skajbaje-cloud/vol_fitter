@@ -16,6 +16,9 @@ class NameRecord:
     chain_ric: str | None = None
     display_name: str | None = None
     active: bool = True
+    group_name: str | None = None
+    expiry_filter: str = "all"  # "all" | "monthly"
+    timezone: str | None = None  # IANA zone for scheduled snap times
     name_id: int | None = None  # set when read back from the database, ignored on insert
 
 

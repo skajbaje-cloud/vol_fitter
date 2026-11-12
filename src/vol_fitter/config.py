@@ -42,12 +42,24 @@ FRONTEND_DIST = Path(os.environ.get("VOL_FITTER_FRONTEND_DIST", _REPO_ROOT / "fr
 # ---- snapshot hyperparameters ----
 MAX_SNAP = 4000                       # largest safe get_data batch (see scripts/batch_probe.py)
 UNIVERSE_MAX_AGE_DAYS = 7
+# Universe CSV cache: the repo folder (on Google Drive). Drive sync can briefly lock a file;
+# UniverseCache then rebuilds from LSEG instead of failing the snapshot.
+UNIVERSE_CACHE_DIR = Path(os.environ.get("VOL_FITTER_CACHE_DIR", _REPO_ROOT))
 CALL_SD_WINDOW = (-1.0, 4.0)           # std-dev window around spot, calls
 PUT_SD_WINDOW = (-4.0, 1.0)            # std-dev window around spot, puts
 
 # 40-day realized vol, requestable directly on any underlying RIC (equity,
 # ETF, or index) -- used only to size the std-dev window, not for pricing.
 VOL_FIELD = "TR.Volatility40D"
+
+# ---- snapshot schedule ----
+# The scheduler thread runs inside the web server (uvicorn); VOL_FITTER_SCHEDULER=off disables it.
+SCHEDULER_ENABLED = os.environ.get("VOL_FITTER_SCHEDULER", "on").lower() not in ("0", "off", "false", "no")
+SCHEDULE_TICK_SEC = 20                 # how often due firings are checked
+SCHEDULE_GRACE_MIN = 15                # a firing later than this (server was down) is recorded as missed, not run late
+SCHEDULE_MAX_SLOTS = 5                 # snap times per name per day
+SCHEDULE_MIN_GAP_MIN = 10              # UI warns when a name's times are closer than this
+SCHEDULE_MISSED_LOOKBACK_DAYS = 3      # how far back missed firings are recorded after downtime
 
 # ---- pricing hyperparameters ----
 # Strike-selection band for the forward (F) LAD regression stage, in

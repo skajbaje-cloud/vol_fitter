@@ -24,13 +24,26 @@ interface Props {
   data: unknown[];
   layout: Record<string, unknown>;
   height: number;
+  onPointClick?: (customdata: unknown) => void;   // receives the clicked point's customdata
 }
 
-export function Plot({ data, layout, height }: Props) {
-  const ref = useRef<HTMLDivElement>(null);
+type PlotlyEl = HTMLDivElement & { on?: (ev: string, fn: (e: { points: { customdata: unknown }[] }) => void) => void };
+
+export function Plot({ data, layout, height, onPointClick }: Props) {
+  const ref = useRef<PlotlyEl>(null);
+  const click = useRef(onPointClick);
+  click.current = onPointClick;
+  const bound = useRef(false);
 
   useEffect(() => {
-    if (ref.current) Plotly.react(ref.current, data, { ...BASE_LAYOUT, ...layout }, CONFIG);
+    const el = ref.current;
+    if (!el) return;
+    Plotly.react(el, data, { ...BASE_LAYOUT, ...layout }, CONFIG).then(() => {
+      // Plotly adds .on() to the element on first draw; bind once and read the latest handler through the ref.
+      if (bound.current || !el.on) return;
+      bound.current = true;
+      el.on("plotly_click", (e) => { const p = e.points[0]; if (p && click.current) click.current(p.customdata); });
+    });
   }, [data, layout]);
 
   useEffect(() => {
@@ -42,6 +55,7 @@ export function Plot({ data, layout, height }: Props) {
     return () => {
       ro.disconnect();
       Plotly.purge(el);
+      bound.current = false;
     };
   }, []);
 

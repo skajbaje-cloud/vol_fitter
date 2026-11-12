@@ -41,11 +41,13 @@ def run_snapshot(repo: VolFitterRepository, underlying: str, chain_ric: str | No
     if not chain_ric:
         raise UnregisteredNameError(f"'{underlying}' isn't registered yet -- supply a chain_ric once to register it.")
 
-    name_id = repo.get_or_create_name_id(NameRecord(name=underlying, chain_ric=chain_ric))
+    # An existing name's settings are left alone; a run only registers a name that's missing.
+    name_id = existing.name_id if existing else repo.get_or_create_name_id(NameRecord(name=underlying, chain_ric=chain_ric))
+    expiry_filter = existing.expiry_filter if existing else "all"
 
     with LsegClient() as client:
         universe_cache = UniverseCache(client, chain_ric, name=underlying)
-        quotes, meta = SnapshotService(client, universe_cache, underlying).snap()
+        quotes, meta = SnapshotService(client, universe_cache, underlying, expiry_filter=expiry_filter).snap()
 
     forwards = ForwardFitter().fit_all(quotes)
     priced = Black76Pricer().price_quotes(quotes, forwards)

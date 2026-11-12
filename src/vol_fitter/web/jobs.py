@@ -1,8 +1,10 @@
-"""In-process, serialized background job queue for snapshot runs.
+"""In-process, serialized background job queues: one for everything that talks to LSEG, one for fits.
 
-One worker thread, one job at a time: concurrent LSEG sessions are untested,
-and a universe snapshot is just a sequence of single-name runs anyway. Job
-history lives in memory, so restarting the server clears it.
+One worker thread, one job at a time: lseg.data keeps a single global session,
+so a look-up running beside a snapshot could close the session under it.
+Look-ups are quick and someone is waiting on them, so they jump the queue
+(but never interrupt the running job). History lives in memory; restarting
+the server clears it.
 """
 from __future__ import annotations
 
@@ -10,44 +12,62 @@ import itertools
 import queue
 import threading
 from datetime import datetime
-from typing import Callable
+from typing import Any, Callable
 
 from vol_fitter.logging_setup import get_logger
-from vol_fitter.orchestration.models import SnapshotRunResult
-from vol_fitter.web.models import Job
+from vol_fitter.web.models import JOB_KINDS, Job
 
 logger = get_logger(__name__)
 
-SnapshotRunner = Callable[[str, str | None], SnapshotRunResult]
+JobRunner = Callable[[dict], Any]   # payload -> result
 
 _MAX_HISTORY = 200
+_PRIORITY = {"lookup": 0}           # everything else 1, first come first served
+_IDS = itertools.count(1)           # shared by every queue, so a job id is unique across them
 
 
 class JobQueue:
-    def __init__(self, runner: SnapshotRunner):
-        self._runner = runner
+    def __init__(self, runners: dict[str, JobRunner], worker_name: str = "lseg-worker"):
+        unknown = set(runners) - set(JOB_KINDS)
+        if unknown:
+            raise ValueError(f"unknown job kinds: {sorted(unknown)}")
+        self._runners = runners
         self._jobs: dict[int, Job] = {}
-        self._ids = itertools.count(1)
         self._lock = threading.Lock()
-        self._queue: queue.Queue[int | None] = queue.Queue()
-        self._worker = threading.Thread(target=self._work, name="snapshot-worker", daemon=True)
+        self._queue: queue.PriorityQueue[tuple[int, int]] = queue.PriorityQueue()
+        self._worker = threading.Thread(target=self._work, name=worker_name, daemon=True)
         self._worker.start()
 
-    def submit_snapshot(self, name: str, chain_ric: str | None = None) -> Job:
+    def submit(self, kind: str, name: str, payload: dict | None = None, origin: str = "manual") -> Job:
+        if kind not in self._runners:
+            raise ValueError(f"no runner for job kind '{kind}'")
         with self._lock:
-            job = Job(id=next(self._ids), kind="snapshot", name=name, submitted_at=datetime.now(), chain_ric=chain_ric)
+            job = Job(id=next(_IDS), kind=kind, name=name, submitted_at=datetime.now(),
+                      payload=payload or {}, origin=origin)
             self._jobs[job.id] = job
             self._trim()
-        self._queue.put(job.id)
-        logger.info("queued snapshot job %d for %s", job.id, name)
+        self._queue.put((_PRIORITY.get(kind, 1), job.id))
+        logger.info("queued %s job %d for %s", kind, job.id, name)
         return job
+
+    def submit_snapshot(self, name: str, chain_ric: str | None = None, origin: str = "manual") -> Job:
+        return self.submit("snapshot", name, {"name": name, "chain_ric": chain_ric}, origin=origin)
+
+    def has_live(self, kind: str, name: str) -> bool:
+        """True if a job of this kind for this name is queued or running."""
+        with self._lock:
+            return any(j.kind == kind and j.name == name and j.status in ("queued", "running") for j in self._jobs.values())
+
+    def get(self, job_id: int) -> Job | None:
+        with self._lock:
+            return self._jobs.get(job_id)
 
     def list_jobs(self) -> list[Job]:
         with self._lock:
             return sorted(self._jobs.values(), key=lambda j: j.id, reverse=True)
 
     def stop(self) -> None:
-        self._queue.put(None)
+        self._queue.put((-1, -1))
 
     def _trim(self) -> None:
         finished = [j for j in self._jobs.values() if j.status in ("done", "failed")]
@@ -56,8 +76,8 @@ class JobQueue:
 
     def _work(self) -> None:
         while True:
-            job_id = self._queue.get()
-            if job_id is None:
+            _, job_id = self._queue.get()
+            if job_id < 0:
                 return
             with self._lock:
                 job = self._jobs.get(job_id)
@@ -65,11 +85,11 @@ class JobQueue:
                     continue
                 job.status, job.started_at = "running", datetime.now()
             try:
-                result = self._runner(job.name, job.chain_ric)
+                result = self._runners[job.kind](job.payload)
                 with self._lock:
                     job.status, job.result = "done", result
-            except Exception as exc:  # any failure in a run is reported on the job, never kills the worker
-                logger.exception("snapshot job %d for %s failed", job.id, job.name)
+            except Exception as exc:  # any failure is reported on the job, never kills the worker
+                logger.exception("%s job %d for %s failed", job.kind, job.id, job.name)
                 with self._lock:
                     job.status, job.error = "failed", f"{type(exc).__name__}: {exc}"
             finally:
