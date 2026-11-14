@@ -24,6 +24,7 @@ _EXCLUDE = ("binary", "atm chain", "volatility surface", "spread", "future")
 _VARIANTS = ("weekly", "wednesday", "night session", "day session", "j-net", "micro", "mini")
 _PER_EXPIRY = re.compile(r"[FGHJKMNQUVXZ]\d\d\*")   # e.g. 0#STXEZ26*.EX: one expiry's sub-chain
 _SEARCH_TOP = 25
+_UNRESOLVED = re.compile(r"resolve|invalid|not found|unknown", re.IGNORECASE)   # LSEG's errors for a bad RIC
 
 
 def ric_root(ric: str) -> str:
@@ -101,12 +102,18 @@ class NameLookup:
             df = self.client.get_with_retry(rics, _INFO_FIELDS)
         except Exception as exc:
             logger.warning("info batch failed (%s); retrying one RIC at a time", exc)
-            frames = []
+            frames, errors = [], []
             for r in rics:
                 try:
                     frames.append(self.client.get_with_retry([r], _INFO_FIELDS))
-                except Exception:
-                    logger.warning("no info for %s", r)
+                except Exception as one:
+                    logger.warning("no info for %s: %s", r, one)
+                    errors.append(one)
+            # An unknown RIC fails to resolve; anything else (timeouts, closed session) means LSEG itself is down,
+            # which must not be reported as "doesn't recognise this RIC".
+            outage = [e for e in errors if not _UNRESOLVED.search(str(e))]
+            if not frames and outage:
+                raise RuntimeError(f"LSEG request failed, so nothing was looked up: {outage[-1]}") from outage[-1]
             df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
         out: dict[str, dict] = {}
         for _, row in df.iterrows():

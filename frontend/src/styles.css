@@ -339,3 +339,7 @@ input::placeholder { color: var(--text-muted); }
 .pgrid-more { font-size: 11.5px; padding: 6px 10px 6px 0; }
 .pgrid-plot { flex: 1; min-width: 0; padding: 0 6px; }
 .pgrid-actions { display: flex; gap: 6px; height: 30px; align-items: center; }
+
+/* ---- analysis: curvature study ---- */
+.analysis-views { margin-bottom: 12px; }
+.curv-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 14px; }

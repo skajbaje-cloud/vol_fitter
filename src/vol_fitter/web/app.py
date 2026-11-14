@@ -19,7 +19,7 @@ from vol_fitter.orchestration.fit_run import run_fit_job
 from vol_fitter.orchestration.lookup_run import run_chain_check, run_lookup
 from vol_fitter.orchestration.snapshot_run import run_snapshot
 from vol_fitter.scheduling.scheduler import Scheduler
-from vol_fitter.web import routes_fits, routes_jobs, routes_names, routes_schedule, routes_smile
+from vol_fitter.web import routes_fits, routes_jobs, routes_names, routes_schedule, routes_smile, routes_spline
 from vol_fitter.web.deps import get_repo
 from vol_fitter.web.jobs import JobQueue, JobRunner
 
@@ -61,6 +61,7 @@ def create_app(runners: dict[str, JobRunner] | None = None, frontend_dist: Path 
     app.include_router(routes_jobs.router)
     app.include_router(routes_fits.router)
     app.include_router(routes_schedule.router)
+    app.include_router(routes_spline.router)
 
     dist = frontend_dist or config.FRONTEND_DIST
     if dist.is_dir():

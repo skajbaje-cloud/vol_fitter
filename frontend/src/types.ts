@@ -220,3 +220,32 @@ export interface FitSnapshotSummary {
   n_model_miss: number;
   duration_sec: number;
 }
+
+/** Bid-ask spline study (curvature), one expiry. z = Phi^-1(1 - call delta); vols decimal; s2 in vol per z^2. */
+export interface WingPeak { z: number | null; s2: number | null; interior: boolean }
+export interface SplineExpiry {
+  expiry: string;
+  T: number;
+  forward: number;
+  status: "ok" | "too_few" | "failed";
+  message: string | null;
+  n_bounds: number;
+  n_active: number;
+  n_broken: number;
+  max_break: number;
+  roughness: number | null;
+  monotone_ok: boolean;
+  s2_atm: number | null;
+  put_peak: WingPeak;
+  call_peak: WingPeak;
+  model: { sigma_atm: number; skew: number; kappa_put: number; kappa_call: number } | null;
+  grid_z: number[];
+  s: number[];
+  s1: number[];
+  s2: number[];
+  points: {
+    strike: number[]; is_call: boolean[];
+    z_bid: (number | null)[]; iv_bid: (number | null)[]; z_ask: (number | null)[]; iv_ask: (number | null)[];
+    bid_active: boolean[]; ask_active: boolean[]; bid_slack: number[]; ask_slack: number[];
+  };
+}

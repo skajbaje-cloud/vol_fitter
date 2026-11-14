@@ -10,6 +10,10 @@ from vol_fitter.logging_setup import get_logger
 logger = get_logger(__name__)
 
 
+class LsegUnavailableError(RuntimeError):
+    """The LSEG session couldn't be opened, so no request can be made."""
+
+
 class LsegClient:
     def __init__(self, tries: int = 4, backoff_base: float = 2.0):
         self.tries = tries
@@ -27,7 +31,16 @@ class LsegClient:
         import lseg.data as ld
 
         self._ld = ld
-        self._ld.open_session()
+        session = self._ld.open_session()
+        # open_session() doesn't raise when Workspace won't hand over a session; it returns one that's
+        # still closed, and every request then fails. Stop here with a message that says so.
+        state = getattr(session, "open_state", None)
+        if state is not None and getattr(state, "name", str(state)) != "Opened":
+            self.close()
+            self._ld = None
+            raise LsegUnavailableError(
+                "Couldn't open an LSEG session: Workspace isn't answering. "
+                "Check Workspace is running and signed in (restart it if needed), then retry.")
         logger.info("LSEG session opened")
 
     def close(self) -> None:

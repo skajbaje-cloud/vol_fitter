@@ -47,7 +47,8 @@ def run_snapshot(repo: VolFitterRepository, underlying: str, chain_ric: str | No
 
     with LsegClient() as client:
         universe_cache = UniverseCache(client, chain_ric, name=underlying)
-        quotes, meta = SnapshotService(client, universe_cache, underlying, expiry_filter=expiry_filter).snap()
+        quotes, meta = SnapshotService(client, universe_cache, underlying, expiry_filter=expiry_filter,
+                                       timezone=existing.timezone if existing else None).snap()
 
     forwards = ForwardFitter().fit_all(quotes)
     priced = Black76Pricer().price_quotes(quotes, forwards)

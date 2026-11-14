@@ -16,10 +16,14 @@ from vol_fitter import config
 from vol_fitter.logging_setup import get_logger
 from vol_fitter.snapshot.lseg_client import LsegClient
 from vol_fitter.snapshot.models import SnapshotMeta
-from vol_fitter.snapshot.expiry_filter import filter_expiries
+from vol_fitter.snapshot.expiry_filter import filter_expiries, monthly_rule
 from vol_fitter.snapshot.universe_cache import UniverseCache
 
 logger = get_logger(__name__)
+
+
+class EmptySnapshotError(RuntimeError):
+    """Nothing left to snap; raised before anything is stored so the job shows as failed."""
 
 _QUOTE_COLUMNS = ["instrument", "strike", "expiry_date", "T", "is_call", "bid", "ask"]
 _SPOT_FIELDS = ("TRDPRC_1", "CF_LAST", "HST_CLOSE")    # first one that has a value is the spot
@@ -36,6 +40,7 @@ class SnapshotService:
         max_snap: int = config.MAX_SNAP,
         vol_field: str = config.VOL_FIELD,
         expiry_filter: str = "all",
+        timezone: str | None = None,          # the name's exchange zone; picks the market's monthly rule
     ):
         self.client = client
         self.universe_cache = universe_cache
@@ -45,20 +50,35 @@ class SnapshotService:
         self.max_snap = max_snap
         self.vol_field = vol_field
         self.expiry_filter = expiry_filter
+        self.timezone = timezone
 
     def snap(self) -> tuple[pd.DataFrame, SnapshotMeta]:
         t0 = time.time()
-        universe = filter_expiries(self.universe_cache.load(), self.expiry_filter)
+        full = self.universe_cache.load()
+        universe = filter_expiries(full, self.expiry_filter, self.timezone)
+        if universe.empty:
+            n = full["EXPIR_DATE"].nunique()
+            raise EmptySnapshotError(
+                f"{self.underlying}: expiry filter '{self.expiry_filter}' ({monthly_rule(self.timezone)[0]} for "
+                f"{self.timezone or 'default market'}) kept 0 of {n} listed expiries" if n else
+                f"{self.underlying}: the option chain lists no expiries")
         spot0, vol = self._spot_and_vol()
         windowed = self._in_window(universe, spot0, vol)
         capped = self._cap(windowed)
+        if capped.empty:
+            raise EmptySnapshotError(
+                f"{self.underlying}: no options inside the strike window (spot {spot0:,.2f}, vol {vol:.1%})")
         logger.info(
             "spot %.2f, vol %.1f%%: universe %d -> window %d RICs, %d expiries",
             spot0, vol * 100, len(universe), len(capped), capped["EXPIR_DATE"].nunique(),
         )
 
         quotes = self.client.get_with_retry([self.underlying] + capped["Instrument"].tolist(), ["BID", "ASK", "TRDPRC_1"])
-        spot = quotes.loc[quotes["Instrument"] == self.underlying, "TRDPRC_1"].iloc[0]
+        # Some venues (Osaka) return prices as text; arithmetic on those concatenates strings downstream.
+        for col in ("BID", "ASK", "TRDPRC_1"):
+            quotes[col] = pd.to_numeric(quotes[col], errors="coerce")
+        last = quotes.loc[quotes["Instrument"] == self.underlying, "TRDPRC_1"]
+        spot = last.iloc[0] if len(last) and pd.notna(last.iloc[0]) else spot0   # no last trade: keep the fallback spot
         df = capped.merge(quotes[["Instrument", "BID", "ASK"]], on="Instrument")
 
         quotes_df = df.rename(

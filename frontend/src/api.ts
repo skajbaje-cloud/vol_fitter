@@ -1,6 +1,6 @@
 import type {
   ExpiryFit, FitCoverage, FitMode, JobOut, NameIn, NameOut, NamePatch, ScheduleItemIn, ScheduleOut, SchedulerStatus,
-  SmileOut,
+  SmileOut, SplineExpiry,
 } from "./types";
 
 // Relative URLs: the page is always served from the same origin as the API
@@ -57,6 +57,8 @@ export const api = {
   runFits: (names: string[], mode: FitMode, anchor: boolean, snapshot_ts?: string) =>
     post<JobOut[]>("api/fits/run", { names, mode, anchor, snapshot_ts }),
   fitCoverage: () => request<FitCoverage[]>("api/fits/coverage"),
+  /** Not cached: the model overlay changes on a refit (the server caches the spline fits themselves). */
+  splineStudy: (name: string, snapshot: string) => request<SplineExpiry[]>(`api/spline/${enc(name)}/${enc(snapshot)}`),
   expiryFits: (name: string, snapshot: string) => request<ExpiryFit[]>(`api/fits/${enc(name)}/${enc(snapshot)}`),
   /** A fit rewrites a snapshot's params, so cached smiles (which carry them) must be re-read. */
   forgetSmiles: () => { for (const k of [...cache.keys()]) if (k.startsWith("api/smile?")) cache.delete(k); },

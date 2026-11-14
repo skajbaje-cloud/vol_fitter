@@ -248,3 +248,12 @@ def test_fit_coverage_and_expiry_detail(client):
     assert [r["expiry_date"] for r in rows] == [e.isoformat() for e in EXPIRIES]
     assert rows[0]["forward"] == pytest.approx(100.5) and rows[0]["fit_status"] is None
     assert client.get("/api/fits/WEB.A/2020-01-01T00:00:00").status_code == 404
+
+
+def test_spline_study_endpoint(client):
+    r = client.get(f"/api/spline/WEB.A/{NEW_TS.isoformat()}")
+    assert r.status_code == 200
+    body = r.json()
+    assert [e["expiry"] for e in body] == [str(e) for e in EXPIRIES]
+    assert body[0]["status"] == "too_few" and body[0]["points"]["strike"] == [95.0, 105.0]
+    assert client.get(f"/api/spline/NOPE/{NEW_TS.isoformat()}").status_code == 404
