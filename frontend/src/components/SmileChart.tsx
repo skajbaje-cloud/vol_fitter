@@ -1,16 +1,18 @@
 import { useMemo } from "react";
 import { X_LABELS, bidAskPoints, fittedCurve, hasFit, interp, midCurve, type Pt } from "../lib/smile";
 import { seriesLabel } from "../lib/format";
-import type { SeriesSpec, SmileOut, XMode, YMode } from "../types";
+import type { Compare, SeriesSpec, SmileOut, XMode } from "../types";
 import { Plot, SERIES_COLORS, axis } from "./Plot";
 
 interface Props {
   series: SeriesSpec[];
   smiles: Record<number, SmileOut | undefined>;
   xMode: XMode;
-  yMode: YMode;
-  height?: number;
+  /** With two or more series, a second panel underneath (same x axis) compares each one with the baseline. */
+  compare: Compare | null;
 }
+
+const LEVELS_PX = 440, COMPARE_PX = 240;
 
 function scatter(pts: Pt[], name: string, color: string, symbol: string, label: string, legendgroup: string) {
   return {
@@ -30,7 +32,9 @@ function line(pts: Pt[], name: string, color: string, label: string, fmt: string
   };
 }
 
-export function SmileChart({ series, smiles, xMode, yMode, height = 500 }: Props) {
+export function SmileChart({ series, smiles, xMode, compare }: Props) {
+  const stacked = compare !== null && series.length > 1;
+
   const { data, notes } = useMemo(() => {
     const traces: unknown[] = [];
     const notes = new Set<string>();
@@ -39,6 +43,7 @@ export function SmileChart({ series, smiles, xMode, yMode, height = 500 }: Props
     const curveOf = (spec: SeriesSpec, s: SmileOut) => (spec.type === "fitted" ? fittedCurve(s, xMode) : midCurve(s, xMode));
     const baseSmile = baseline ? smiles[baseline.id] : undefined;
     const baseCurve = baseSmile ? curveOf(baseline, baseSmile) : [];
+    const ratio = compare === "ratio";
 
     series.forEach((spec, idx) => {
       const s = smiles[spec.id];
@@ -46,27 +51,11 @@ export function SmileChart({ series, smiles, xMode, yMode, height = 500 }: Props
       const color = SERIES_COLORS[idx % SERIES_COLORS.length];
       const label = seriesLabel(spec);
       if (spec.type === "fitted" && !hasFit(s)) {
-        if (yMode === "levels") notes.add(`${label}: no stored fit for this expiry yet (fit it from the Underlyings tab).`);
+        notes.add(`${label}: no stored fit for this expiry yet (fit it from the Underlyings tab).`);
         return;
       }
 
-      if (yMode === "diff") {
-        if (spec.id === baseline.id) {
-          const xs = baseCurve.map((p) => p.x);
-          traces.push({ x: xs, y: xs.map(() => 0), mode: "lines", type: "scatter", name: `${label} (baseline)`,
-            line: { color, width: 1.5, dash: "dot" }, hoverinfo: "skip" });
-          return;
-        }
-        const diff = curveOf(spec, s)
-          .map((p) => ({ ...p, base: interp(baseCurve, p.x) }))
-          .filter((p) => p.base != null)
-          .map((p) => ({ ...p, y: p.y - (p.base as number) }));
-        traces.push(line(diff, `${label} − baseline`, color, label, "+.2%"));
-        if (xMode === "strike" && s.name !== baseSmile?.name)
-          notes.add("Strikes of different underlyings aren't comparable — use delta or moneyness to diff across names.");
-        return;
-      }
-
+      // Top panel: the smile itself.
       if (spec.type === "bidask") {
         const { bid, ask } = bidAskPoints(s, xMode);
         traces.push(scatter(bid, `${label} bid`, color, "triangle-down", label, String(spec.id)));
@@ -76,27 +65,47 @@ export function SmileChart({ series, smiles, xMode, yMode, height = 500 }: Props
       } else {
         traces.push(line(midCurve(s, xMode), `${label} mid`, color, label, ".2%"));
       }
+
+      // Bottom panel: against the baseline, on the same x axis.
+      if (!stacked) return;
+      if (spec.id === baseline.id) {
+        const xs = baseCurve.map((p) => p.x);
+        traces.push({ x: xs, y: xs.map(() => (ratio ? 1 : 0)), yaxis: "y2", mode: "lines", type: "scatter", showlegend: false,
+          line: { color, width: 1.5, dash: "dot" }, hoverinfo: "skip" });
+        return;
+      }
+      const pts = curveOf(spec, s)
+        .map((p) => ({ ...p, base: interp(baseCurve, p.x) }))
+        .filter((p) => p.base != null && (!ratio || p.base > 0))
+        .map((p) => ({ ...p, y: ratio ? p.y / (p.base as number) : p.y - (p.base as number) }));
+      traces.push({ ...line(pts, `${label} ${ratio ? "÷" : "−"} baseline`, color, label, ratio ? ".3f" : "+.2%"), yaxis: "y2", showlegend: false });
+      if (xMode === "strike" && s.name !== baseSmile?.name)
+        notes.add("Strikes of different underlyings aren't comparable: use delta, z or moneyness to compare across names.");
     });
     return { data: traces, notes: [...notes] };
-  }, [series, smiles, xMode, yMode]);
+  }, [series, smiles, xMode, compare, stacked]);
 
-  const layout = useMemo(
-    () => ({
-      margin: { l: 56, r: 16, t: 10, b: 44 },
-      xaxis: axis({ title: { text: X_LABELS[xMode] } }),
-      yaxis: axis({
-        title: { text: yMode === "diff" ? "minus baseline" : "implied vol" },
-        tickformat: yMode === "diff" ? "+.1%" : ".0%",
+  const height = stacked ? LEVELS_PX + COMPARE_PX : LEVELS_PX;
+  const layout = useMemo(() => {
+    const split = COMPARE_PX / (LEVELS_PX + COMPARE_PX);      // share of the figure the bottom panel gets
+    return {
+      margin: { l: 60, r: 16, t: 10, b: 44 },
+      xaxis: axis({ title: { text: X_LABELS[xMode] }, anchor: stacked ? "y2" : "y" }),
+      yaxis: axis({ title: { text: "implied vol" }, tickformat: ".0%", domain: stacked ? [split + 0.06, 1] : [0, 1] }),
+      ...(stacked && {
+        yaxis2: axis({
+          domain: [0, split - 0.02],
+          title: { text: compare === "ratio" ? "÷ baseline" : "− baseline" },
+          tickformat: compare === "ratio" ? ".2f" : "+.1%",
+        }),
       }),
-      showlegend: yMode === "levels",            // the difference chart sits under the levels one and shares its colors
-      legend: { orientation: "h", y: -0.16, font: { size: 10.5 } },
-    }),
-    [xMode, yMode],
-  );
+      legend: { orientation: "h", y: -70 / height, font: { size: 10.5 } },
+    };
+  }, [xMode, stacked, compare, height]);
 
   return (
     <>
-      <Plot data={data} layout={layout} height={height} />
+      <Plot data={data} layout={layout} height={height + 40} />
       {notes.map((n) => (
         <div key={n} className="note">{n}</div>
       ))}

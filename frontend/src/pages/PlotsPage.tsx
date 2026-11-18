@@ -6,7 +6,7 @@ import { SeriesPanel } from "../components/SeriesPanel";
 import { SmileChart } from "../components/SmileChart";
 import { SmileGrid } from "../components/SmileGrid";
 import { seriesLabel } from "../lib/format";
-import type { NameOut, SeriesSpec, SmileOut, XMode } from "../types";
+import type { Compare, NameOut, SeriesSpec, SmileOut, XMode } from "../types";
 
 interface Props {
   names: NameOut[];
@@ -22,6 +22,7 @@ type View = "single" | "grid";
 export function PlotsPage({ names, series, setSeries, resetKey, onOpenInPlots }: Props) {
   const [view, setView] = useState<View>("single");
   const [xMode, setXMode] = useState<XMode>("delta");
+  const [compare, setCompare] = useState<Compare>("diff");
   useEffect(() => setView("single"), [resetKey]);
   const [focusedId, setFocusedId] = useState<number | null>(null);
   const [smiles, setSmiles] = useState<Record<number, SmileOut | undefined>>({});
@@ -69,22 +70,19 @@ export function PlotsPage({ names, series, setSeries, resetKey, onOpenInPlots }:
           <div className="field"><span className="field-label">X axis</span>
             <Seg label="X axis" value={xMode} options={X_OPTIONS} onChange={setXMode} />
           </div>
+          {series.length > 1 && (
+            <div className="field" title="Lower panel: each series' mid (or fitted curve, for a fitted series) against the baseline's. Pick the baseline in the series list.">
+              <span className="field-label">Compare to baseline</span>
+              <Seg label="Compare to baseline" value={compare} onChange={setCompare} options={[
+                { value: "diff", label: "Difference" }, { value: "ratio", label: "Ratio" }]} />
+            </div>
+          )}
         </div>
 
         <div className="plots-layout">
-          <div className="side-stack">
-            <div className="panel chart-box">
-              <SmileChart series={series} smiles={smiles} xMode={xMode} yMode="levels" height={440} />
-              {series.filter((s) => errors[s.id]).map((s) => <div key={s.id} className="note error">{seriesLabel(s)}: {errors[s.id]}</div>)}
-            </div>
-            {series.length > 1 && (
-              <div className="panel">
-                <div className="panel-head" title="Each series' mid (or fitted curve, for a fitted series) minus the baseline's. Pick the baseline in the series list.">
-                  Difference vs baseline
-                </div>
-                <div className="chart-box"><SmileChart series={series} smiles={smiles} xMode={xMode} yMode="diff" height={260} /></div>
-              </div>
-            )}
+          <div className="panel chart-box">
+            <SmileChart series={series} smiles={smiles} xMode={xMode} compare={compare} />
+            {series.filter((s) => errors[s.id]).map((s) => <div key={s.id} className="note error">{seriesLabel(s)}: {errors[s.id]}</div>)}
           </div>
           <div className="side-stack">
             <SeriesPanel series={series} names={names} focusedId={focused?.id ?? null} showBaseline={series.length > 1}

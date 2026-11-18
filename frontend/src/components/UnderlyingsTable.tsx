@@ -1,9 +1,10 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { fmtPct, fmtTs } from "../lib/format";
 import { type PendingName, nameKey, pendingKey, pendingState } from "../lib/names";
-import { type Draft, filled, fromRow, sameDraft, validate, WEEKDAYS } from "../lib/schedule";
+import { type Draft, fromRow, sameDraft, validate, WEEKDAYS } from "../lib/schedule";
 import { hhmmIn, todayIn, tzAbbr, wallToInstant } from "../lib/tz";
 import { DAYS, type FitCoverage, type JobOut, type NameOut, type NamePatch, type ScheduleRow, type SeriesSpec } from "../types";
+import { BulkTimesRow } from "./BulkTimesRow";
 import { CoveragePill, FitDetail } from "./FitDetail";
 import { type CheckView, type NameDraft, NameEditor } from "./NameEditor";
 import { TimeInput } from "./TimeInput";
@@ -19,6 +20,7 @@ export interface TableProps {
   expanded: string | null;
   groups: string[];
   version: number;                              // bumps when fits finish
+  bulk: { selected: ScheduleRow[]; onApply: Parameters<typeof BulkTimesRow>[0]["onApply"] } | null;
   lastJob: (name: string, kind: JobOut["kind"]) => JobOut | undefined;
   checkView: (name: string, chain: string) => CheckView | null;
   onToggle: (key: string) => void;
@@ -40,7 +42,7 @@ export interface TableProps {
 const STATE_PILL = {
   looking: ["running", "looking up"], notfound: ["failed", "not found"], choose: ["warn", "choose chain"], ready: ["done", "ready"],
 } as const;
-const COLS = 9;
+const COLS = 9, TIMES_COL = 4;              // the snap-times column sits after sel, name, on, last snap
 const live = (j?: JobOut) => !!j && (j.status === "queued" || j.status === "running");
 const short = (ts: string | null | undefined) => (ts ? fmtTs(ts).slice(5, 16) : null);
 
@@ -51,17 +53,31 @@ function JobOr({ job, verb, children }: { job?: JobOut; verb: string; children: 
   return <>{children}</>;
 }
 
-function scheduleSummary(r: ScheduleRow | undefined, d: Draft | undefined) {
+const daysLabel = (d: Draft) => (d.days.length === 7 ? "daily" : d.days.join() === WEEKDAYS.join() ? "Mon–Fri" : d.days.join(" ") || "no days");
+
+/** Up to five snap times, typed straight into the row (local to the name's zone); days and on/off live under ▾. */
+function TimesCell({ name, r, d, onChange }: { name: string; r?: ScheduleRow; d?: Draft; onChange: (d: Draft) => void }) {
   if (!r || !d) return <span className="muted">—</span>;
-  if (!r.timezone) return <span className="muted">no time zone</span>;
-  const t = filled(d);
-  if (!t.length) return <span className="muted">—</span>;
-  const days = d.days.length === 7 ? "daily" : d.days.join() === WEEKDAYS.join() ? "Mon–Fri" : d.days.join(" ");
-  const dirty = !sameDraft(d, fromRow(r));
+  const zone = r.timezone;
+  if (!zone) return <span className="muted" title="Set a time zone under ▾ to schedule snaps">no time zone</span>;
+  const server = fromRow(r);
+  const { errors, warnings } = validate(d);
+  const abbr = tzAbbr(zone);
+  const userTime = (t: string) => (/^\d\d:\d\d$/.test(t) ? `${hhmmIn(wallToInstant(zone, todayIn(zone), t))} your time` : "");
   return (
-    <span className={dirty ? "warn-text" : d.enabled ? "" : "muted"} title={dirty ? "Unsaved" : d.enabled ? "" : "Schedule off"}>
-      {[...t].sort().join(" ")} {tzAbbr(r.timezone)} · {days}{d.enabled ? "" : " · off"}
-    </span>
+    <>
+      <div className="times-cell">
+        {d.times.map((t, i) => (
+          <TimeInput key={i} value={t} changed={t !== server.times[i]} title={userTime(t)} label={`${name} time ${i + 1} (${abbr})`}
+            onChange={(v) => onChange({ ...d, times: d.times.map((x, j) => (j === i ? v : x)) })} />
+        ))}
+      </div>
+      <div className={`job-sub ${d.enabled ? "muted" : "warn-text"}`}>
+        {abbr} · {daysLabel(d)}{d.enabled ? "" : " · schedule off"}{sameDraft(d, server) ? "" : " · unsaved"}
+      </div>
+      {errors.map((e) => <div key={e} className="error-text">{e}.</div>)}
+      {warnings.map((w) => <div key={w} className="warn-text job-sub">{w}.</div>)}
+    </>
   );
 }
 
@@ -78,10 +94,14 @@ export function UnderlyingsTable(p: TableProps) {
           <tr>
             <th className="sel"><input ref={all} type="checkbox" aria-label="Select all"
               checked={p.selectable.length > 0 && nSel === p.selectable.length} onChange={p.onToggleAll} /></th>
-            <th>Name</th><th>On</th><th>Last snap</th><th>Schedule</th><th>Latest fit</th><th>Inside</th><th>Unfitted</th><th />
+            <th>Name</th><th>On</th><th>Last snap</th><th>Snap times</th><th>Latest fit</th><th>Inside</th><th>Unfitted</th><th />
           </tr>
         </thead>
         <tbody>
+          {p.bulk && p.bulk.selected.length > 0 && (
+            <BulkTimesRow selected={p.bulk.selected} rows={[...p.schedule.values()]} drafts={p.drafts}
+              lead={TIMES_COL} tail={COLS - TIMES_COL - 1} onApply={p.bulk.onApply} />
+          )}
           {p.pending.map((row) => {
             const key = pendingKey(row.ric), st = pendingState(row), [cls, label] = STATE_PILL[st];
             const open = p.expanded === key && !!row.lookup?.found;
@@ -124,7 +144,7 @@ export function UnderlyingsTable(p: TableProps) {
                   <td className="name">{n.name}{n.display_name && <div className="muted job-sub dname" title={n.display_name}>{n.display_name}</div>}</td>
                   <td><Toggle on={n.active} label={`${n.name} active`} onChange={(v) => p.onSaveName(n.name, { active: v })} /></td>
                   <td><JobOr job={snapJob} verb="snapping">{short(n.last_snapshot_ts) ?? <span className="muted">never</span>}</JobOr></td>
-                  <td>{scheduleSummary(p.schedule.get(n.name), p.drafts[n.name])}</td>
+                  <td><TimesCell name={n.name} r={p.schedule.get(n.name)} d={p.drafts[n.name]} onChange={(d) => p.onDraft(n.name, d)} /></td>
                   <td><JobOr job={fitJob} verb="fitting">{latest ? <CoveragePill c={latest} /> : <span className="muted">—</span>}</JobOr></td>
                   <td>{fmtPct(latest?.mean_pct_inside, 0)}</td>
                   <td>{unfitted ? `${unfitted} of ${snaps.length}` : <span className="muted">—</span>}</td>
@@ -186,36 +206,26 @@ function RegisteredEditor({ n, groups, checkView, onCheck, onSave }: {
   );
 }
 
-/** One name's snap times (local to its zone), days and on/off; saved with the page's "Save schedule". */
+/** Which days a name's snap times fire on, and an on/off switch; saved with the page's "Save schedule". */
 function ScheduleEditor({ r, d, onChange }: { r: ScheduleRow; d: Draft; onChange: (d: Draft) => void }) {
-  const server = fromRow(r);
   const zone = r.timezone;
-  const { errors, warnings } = validate(d);
-  const userTime = (t: string) => (zone && /^\d\d:\d\d$/.test(t) ? `${hhmmIn(wallToInstant(zone, todayIn(zone), t))} your time` : "");
   const toggleDay = (day: (typeof DAYS)[number]) =>
     onChange({ ...d, days: d.days.includes(day) ? d.days.filter((x) => x !== day) : DAYS.filter((x) => x === day || d.days.includes(x)) });
 
   return (
     <div className="sched-edit">
-      <span className="field-label">Schedule{zone ? ` · ${zone} (${tzAbbr(zone)})` : ""}</span>
+      <span className="field-label">Schedule days{zone ? ` · times are ${zone} wall-clock` : ""}</span>
       {!zone ? <span className="muted">Set a time zone above first.</span> : (
         <>
-          <div className="sched-days" role="group" aria-label={`${r.name} snap times`}>
-            {d.times.map((t, i) => (
-              <TimeInput key={i} value={t} changed={t !== server.times[i]} title={userTime(t)} label={`${r.name} time ${i + 1}`}
-                onChange={(v) => onChange({ ...d, times: d.times.map((x, j) => (j === i ? v : x)) })} />
-            ))}
-            <span className="sched-gap" />
+          <div className="sched-days" role="group" aria-label={`${r.name} schedule days`}>
             {DAYS.map((day) => (
               <button key={day} type="button" aria-pressed={d.days.includes(day)} className={d.days.includes(day) ? "active" : ""}
                 onClick={() => toggleDay(day)}>{day}</button>
             ))}
             <span className="sched-gap" />
             <Toggle on={d.enabled} label={`${r.name} schedule on`} onChange={(v) => onChange({ ...d, enabled: v })} />
-            <span className="muted">{d.enabled ? "on" : "off"}</span>
+            <span className="muted">{d.enabled ? "schedule on" : "schedule off"}</span>
           </div>
-          {errors.map((e) => <span key={e} className="error-text">{e}. </span>)}
-          {warnings.map((w) => <span key={w} className="warn-text">{w}. </span>)}
         </>
       )}
     </div>

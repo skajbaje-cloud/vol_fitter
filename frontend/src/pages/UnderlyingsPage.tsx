@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
-import { BulkApplyBar } from "../components/BulkApplyBar";
 import type { CheckView } from "../components/NameEditor";
 import { SchedulerStatus } from "../components/SchedulerStatus";
 import { type MenuItem, SelectMenu } from "../components/SelectMenu";
@@ -259,11 +258,10 @@ export function UnderlyingsPage({ names, onNamesChanged, onOpenInPlots }: Props)
           onClick={() => fit(selNames.map((n) => n.name))}>Fit {selNames.length || ""}</button>
         <button type="button" className="btn" onClick={snapshotSelected}>Snapshot {nRun || ""}</button>
       </div>
-      {showBulk && selRows.length > 0 && <BulkApplyBar selected={selRows} rows={schedRows} drafts={drafts} onApply={bulkApply} />}
       {names.length === 0 && pending.length === 0 ? <div className="muted empty">No underlyings yet. Add some RICs above.</div> : (
         <UnderlyingsTable pending={pending} names={names} coverage={byName} schedule={schedule} drafts={drafts}
           selected={selected} selectable={selectable} expanded={expanded} groups={groups} version={version}
-          lastJob={lastJob} checkView={checkView}
+          lastJob={lastJob} checkView={checkView} bulk={showBulk ? { selected: selRows, onApply: bulkApply } : null}
           onToggle={(k) => setSelected((s) => { const t = new Set(s); if (t.has(k)) t.delete(k); else t.add(k); return t; })}
           onToggleAll={() => pick(selectable.every((k) => selected.has(k)) ? [] : selectable)}
           onExpand={setExpanded}

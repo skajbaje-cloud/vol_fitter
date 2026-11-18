@@ -269,11 +269,10 @@ input::placeholder { color: var(--text-muted); }
 .names-table td.name .dname { max-width: 200px; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-ui); }
 .sched-edit { display: flex; flex-direction: column; gap: 4px; padding: 4px 14px 12px 38px; }
 .sched-gap { width: 10px; }
-.bulk-bar {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 9px 12px; font-size: 12.5px;
-  background: var(--accent-dim); border-bottom: 1px solid var(--border);
-}
-.bulk-bar select { font-size: 12px; padding: 4px 24px 4px 8px; }
+.times-cell { display: flex; gap: 4px; }
+.bulk-row td { background: var(--accent-dim); vertical-align: middle; }
+.bulk-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.bulk-controls select { font-size: 12px; padding: 3px 24px 3px 8px; }
 .sched-time {
   width: 58px; padding: 3px 6px; font: 12px var(--font-mono); text-align: center; color: var(--text); background: transparent;
   border: 1px solid var(--border-strong); border-radius: var(--radius); color-scheme: dark;

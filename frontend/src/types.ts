@@ -1,5 +1,6 @@
 export type XMode = "delta" | "z" | "strike" | "moneyness";
-export type YMode = "levels" | "diff";
+/** How the lower Plots panel compares each series with the baseline. */
+export type Compare = "diff" | "ratio";
 export type SeriesType = "bidask" | "mid" | "fitted";
 export type Route = "plots" | "lab" | "underlyings" | "logs";
 
