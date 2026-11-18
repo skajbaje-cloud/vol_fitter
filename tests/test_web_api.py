@@ -140,6 +140,31 @@ def test_register_then_edit_a_name(client):
     assert client.patch("/api/names/WEB.NEW", json={"expiry_filter": "weekly"}).status_code == 422
 
 
+def test_delete_is_soft_and_re_registering_restores_history(client, repo):
+    body = [{"name": "WEB.DEL", "chain_ric": "0#WEBD*.U", "group_name": "Old"}]
+    assert client.post("/api/names", json=body).status_code == 201
+    name_id = repo.get_name("WEB.DEL").name_id
+    repo.upsert_snapshot(SnapshotRecord(name_id=name_id, snapshot_ts=OLD_TS, spot=1.0))
+    repo.upsert_maturity_params(pd.DataFrame([{"name_id": name_id, "snapshot_ts": OLD_TS, "expiry_date": EXPIRIES[0],
+                                               "T": 0.2, "forward": 1.0, "discount_factor": 1.0}]))
+    assert client.delete("/api/names/WEB.DEL").status_code == 204
+    assert "WEB.DEL" not in {n["name"] for n in client.get("/api/names").json()}
+    assert "WEB.DEL" not in {n["name"] for n in client.get("/api/schedule").json()["names"]}
+    assert client.get("/api/names/WEB.DEL/snapshots").status_code == 404
+    assert client.delete("/api/names/WEB.DEL").status_code == 404
+    body[0]["group_name"] = "New"
+    r = client.post("/api/names", json=body)                                 # same RIC again: revived, same id
+    assert r.status_code == 201 and r.json()[0]["group_name"] == "New" and r.json()[0]["name_id"] == name_id
+    assert client.get("/api/names/WEB.DEL/snapshots").json() == [OLD_TS.isoformat()]
+
+
+def test_logs_endpoint_returns_recent_lines(client):
+    from vol_fitter.logging_setup import get_logger
+    get_logger("vol_fitter.test").warning("hello from the log test")
+    lines = client.get("/api/logs", params={"limit": 50}).json()
+    assert len(lines) <= 50 and "hello from the log test" in lines[-1]
+
+
 def test_register_rejects_ric_with_quotes(client):
     r = client.post("/api/names", json=[{"name": "BAD'X", "chain_ric": "0#X*.U"}])
     assert r.status_code == 422

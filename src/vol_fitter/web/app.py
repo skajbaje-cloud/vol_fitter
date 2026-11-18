@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from vol_fitter import config
-from vol_fitter.logging_setup import get_logger
+from vol_fitter.logging_setup import get_logger, recent_logs
 from vol_fitter.orchestration.fit_run import run_fit_job
 from vol_fitter.orchestration.lookup_run import run_chain_check, run_lookup
 from vol_fitter.orchestration.snapshot_run import run_snapshot
@@ -55,6 +55,11 @@ def create_app(runners: dict[str, JobRunner] | None = None, frontend_dist: Path 
     @app.get("/api/health")
     def health() -> dict:
         return {"status": "ok"}
+
+    @app.get("/api/logs", response_model=list[str])
+    def logs(limit: int = 1000) -> list[str]:
+        """Recent server log lines, oldest first (in memory only; cleared on restart)."""
+        return recent_logs(limit)
 
     app.include_router(routes_names.router)
     app.include_router(routes_smile.router)

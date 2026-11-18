@@ -68,6 +68,7 @@ class FitQueriesMixin:
                 func.max(mp.c.fit_ts).label("last_fit_ts"),
             )
             .select_from(mp.join(n, n.c.name_id == mp.c.name_id))
+            .where(n.c.deleted_ts.is_(None))
             .group_by(n.c.name, mp.c.snapshot_ts)
             .order_by(n.c.name, mp.c.snapshot_ts.desc())
         )

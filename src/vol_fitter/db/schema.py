@@ -41,6 +41,7 @@ names = Table(
     Column("expiry_filter", String(16)),     # "all" (default) | "monthly": which listed expiries to snap
     Column("timezone", String(64)),          # IANA zone the schedule's local times are in; NULL = never fires
     Column("created_ts", DateTime),
+    Column("deleted_ts", DateTime),          # soft delete: hidden everywhere, data kept; re-registering revives it
 )
 
 snapshots = Table(

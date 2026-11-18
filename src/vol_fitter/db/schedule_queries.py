@@ -29,7 +29,8 @@ class ScheduleQueriesMixin:
         with self.engine.connect() as conn:
             rows = conn.execute(
                 select(n.c.name_id, n.c.name, n.c.timezone, n.c.active, s.c.days, s.c.enabled)
-                .select_from(n.outerjoin(s, s.c.name_id == n.c.name_id)).order_by(n.c.name)
+                .select_from(n.outerjoin(s, s.c.name_id == n.c.name_id))
+                .where(n.c.deleted_ts.is_(None)).order_by(n.c.name)
             ).all()
             slots = conn.execute(select(sl.c.name_id, sl.c.local_time).order_by(sl.c.local_time)).all()
         times: dict[int, list[time]] = {}

@@ -37,6 +37,7 @@ class NameQueriesMixin:
         stmt = mysql_insert(schema.names).values(name=record.name, created_ts=_utcnow(), **values)
         stmt = stmt.on_duplicate_key_update(
             **{f: stmt.inserted[f] for f in EDITABLE_NAME_FIELDS},
+            deleted_ts=None,                     # re-registering a deleted name brings it (and its history) back
             # MySQL trick to get the existing row's PK back out of an
             # INSERT ... ON DUPLICATE KEY UPDATE via result.lastrowid.
             name_id=func.last_insert_id(schema.names.c.name_id),
@@ -63,13 +64,21 @@ class NameQueriesMixin:
             logger.info("updated name '%s': %s", name, fields)
         return self.get_name(name)
 
+    def delete_name(self, name: str) -> None:
+        """Soft delete: the name disappears from every listing; its snapshots, quotes and fits stay."""
+        with self.engine.begin() as conn:
+            conn.execute(update(schema.names).where(schema.names.c.name == name).values(deleted_ts=_utcnow()))
+        logger.info("deleted name '%s' (data kept)", name)
+
     def get_name(self, name: str) -> NameRecord | None:
+        """A registered, non-deleted name, or None."""
+        n = schema.names
         with self.engine.connect() as conn:
-            row = conn.execute(select(schema.names).where(schema.names.c.name == name)).first()
+            row = conn.execute(select(n).where(n.c.name == name, n.c.deleted_ts.is_(None))).first()
         return _to_record(row) if row else None
 
     def list_names(self, active_only: bool = False) -> list[NameRecord]:
-        query = select(schema.names).order_by(schema.names.c.name)
+        query = select(schema.names).where(schema.names.c.deleted_ts.is_(None)).order_by(schema.names.c.name)
         if active_only:
             query = query.where(schema.names.c.active.is_(True))
         with self.engine.connect() as conn:

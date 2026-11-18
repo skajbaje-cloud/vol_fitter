@@ -54,6 +54,13 @@ def edit_name(name: str, patch: NamePatch, repo: VolFitterRepository = Depends(g
     return _out(record, repo.last_snapshot_times())
 
 
+@router.delete("/{name}", status_code=204)
+def delete_name(name: str, repo: VolFitterRepository = Depends(get_repo)) -> None:
+    """Soft delete: hidden everywhere (and never scheduled); its data stays, and re-adding the RIC restores it."""
+    require_name(repo, name)
+    repo.delete_name(name)
+
+
 @router.post("/lookup", response_model=JobOut, status_code=202)
 def lookup(req: LookupRequest, jobs: JobQueue = Depends(get_job_queue)) -> JobOut:
     rics = list(dict.fromkeys(r.strip() for r in req.rics if r.strip()))
