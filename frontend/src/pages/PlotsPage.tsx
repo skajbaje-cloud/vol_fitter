@@ -4,20 +4,26 @@ import { ParamsPanel } from "../components/ParamsPanel";
 import { Seg, X_OPTIONS } from "../components/Seg";
 import { SeriesPanel } from "../components/SeriesPanel";
 import { SmileChart } from "../components/SmileChart";
+import { SmileGrid } from "../components/SmileGrid";
+import { seriesLabel } from "../lib/format";
 import type { NameOut, SeriesSpec, SmileOut, XMode, YMode } from "../types";
 
 interface Props {
   names: NameOut[];
   series: SeriesSpec[];
   setSeries: (updater: (prev: SeriesSpec[]) => SeriesSpec[]) => void;
-  /** Bumped when another page loads a fresh series in here, e.g. Grid's "open in Plots". */
+  /** Bumped when a fresh series is loaded in here from elsewhere ("Plot" buttons, grid cells). */
   resetKey: number;
+  onOpenInPlots: (spec: Omit<SeriesSpec, "id" | "baseline">) => void;
 }
 
-export function PlotsPage({ names, series, setSeries, resetKey }: Props) {
+type View = "single" | "grid";
+
+export function PlotsPage({ names, series, setSeries, resetKey, onOpenInPlots }: Props) {
+  const [view, setView] = useState<View>("single");
   const [xMode, setXMode] = useState<XMode>("delta");
   const [yMode, setYMode] = useState<YMode>("levels");
-  useEffect(() => setYMode("levels"), [resetKey]);
+  useEffect(() => { setYMode("levels"); setView("single"); }, [resetKey]);
   const [focusedId, setFocusedId] = useState<number | null>(null);
   const [smiles, setSmiles] = useState<Record<number, SmileOut | undefined>>({});
   const [errors, setErrors] = useState<Record<number, string>>({});
@@ -50,41 +56,42 @@ export function PlotsPage({ names, series, setSeries, resetKey }: Props) {
   }
 
   const focused = series.find((s) => s.id === focusedId) ?? series[series.length - 1];
-  const errorList = Object.entries(errors);
+  const viewSwitch = (
+    <div className="field"><span className="field-label">View</span>
+      <Seg label="View" value={view} onChange={setView} options={[{ value: "single", label: "Single" }, { value: "grid", label: "Grid" }]} />
+    </div>
+  );
 
   return (
     <>
-      <div className="toolbar">
-        <div className="field"><span className="field-label">X axis</span>
-          <Seg label="X axis" value={xMode} options={X_OPTIONS} onChange={setXMode} />
-        </div>
-        <div className="field"><span className="field-label">Y axis</span>
-          <Seg label="Y axis" value={yMode} onChange={setYMode} options={[
-            { value: "levels", label: "Levels" },
-            { value: "diff", label: "Difference" },
-          ]} />
-        </div>
-        <div className="toolbar-hint muted">
-          {yMode === "diff"
-            ? "Each series is drawn as its mid IV minus the baseline series' mid IV."
-            : "Bid ▽ and ask △ share their series' color. One-sided quotes are hidden."}
-        </div>
-      </div>
-
-      <div className="plots-layout">
-        <div className="panel">
-          <div className="panel-head">Implied vol smile</div>
-          <div className="chart-box">
-            <SmileChart series={series} smiles={smiles} xMode={xMode} yMode={yMode} />
-            {errorList.map(([id, msg]) => <div key={id} className="note error">Series #{id}: {msg}</div>)}
+      <div hidden={view !== "single"}>
+        <div className="toolbar">
+          {viewSwitch}
+          <div className="field"><span className="field-label">X axis</span>
+            <Seg label="X axis" value={xMode} options={X_OPTIONS} onChange={setXMode} />
+          </div>
+          <div className="field" title="Difference: each series' mid IV minus the baseline series' mid IV">
+            <span className="field-label">Y axis</span>
+            <Seg label="Y axis" value={yMode} onChange={setYMode} options={[
+              { value: "levels", label: "Levels" },
+              { value: "diff", label: "Difference" },
+            ]} />
           </div>
         </div>
-        <div className="side-stack">
-          <SeriesPanel series={series} names={names} focusedId={focused?.id ?? null}
-            onChange={setSeries} onFocus={setFocusedId} onAdd={addSeries} />
-          <ParamsPanel smile={focused ? smiles[focused.id] : undefined} />
+
+        <div className="plots-layout">
+          <div className="panel chart-box">
+            <SmileChart series={series} smiles={smiles} xMode={xMode} yMode={yMode} />
+            {series.filter((s) => errors[s.id]).map((s) => <div key={s.id} className="note error">{seriesLabel(s)}: {errors[s.id]}</div>)}
+          </div>
+          <div className="side-stack">
+            <SeriesPanel series={series} names={names} focusedId={focused?.id ?? null} showBaseline={yMode === "diff"}
+              onChange={setSeries} onFocus={setFocusedId} onAdd={addSeries} />
+            <ParamsPanel smile={focused ? smiles[focused.id] : undefined} />
+          </div>
         </div>
       </div>
+      {view === "grid" && <SmileGrid names={names} viewSwitch={viewSwitch} onOpenInPlots={onOpenInPlots} />}
     </>
   );
 }

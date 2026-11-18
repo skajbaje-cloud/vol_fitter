@@ -11,7 +11,9 @@ interface Props {
 export function ParamSliders({ p, fitted, stats, onChange, onReset }: Props) {
   return (
     <div className="panel">
-      <div className="panel-head">Parameters</div>
+      <div className="panel-head" title="σ = atm + skew·z + κput·(z⁺)² + κcall·(z⁻)², z = Φ⁻¹(call Δ). Sliders only move the chart; nothing is saved.">
+        Parameters <span className="muted">ⓘ</span>
+      </div>
       <div className="panel-body lab-params">
         {PARAM_SPECS.map((s) => (
           <div key={s.key} className="lab-param">

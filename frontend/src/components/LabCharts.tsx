@@ -2,8 +2,8 @@ import { useMemo } from "react";
 import { type LabAxis, type LabPoint, type ZParams, ppf, terms, xOf, zOf } from "../lib/zquad";
 import { Plot, axis } from "./Plot";
 
-// Colours mirror the CSS tokens: accent = inside, critical = outside, warning = model parts.
-const INSIDE = "#3987e5", OUTSIDE = "#e66767", CURVE = "#f0efec", PARTS = "#fab219", MUTED = "#898781";
+// Colours mirror the CSS tokens: accent = inside, critical = outside.
+const INSIDE = "#3987e5", OUTSIDE = "#e66767", CURVE = "#f0efec", MUTED = "#898781";
 const BAND = "rgba(57, 135, 229, 0.16)";
 
 const GRID_DELTAS = Array.from({ length: 401 }, (_, k) => 0.002 + (0.996 * k) / 400);
@@ -17,14 +17,14 @@ function frame(ax: LabAxis) {
   };
 }
 
-interface Props { points: LabPoint[]; p: ZParams; ax: LabAxis; showParts: boolean }
+interface Props { points: LabPoint[]; p: ZParams; ax: LabAxis }
 
-export function LabCharts({ points, p, ax, showParts }: Props) {
+export function LabCharts({ points, p, ax }: Props) {
   const f = useMemo(() => frame(ax), [ax]);
   const gx = useMemo(() => GRID_DELTAS.map((d) => xOf(ax, d)), [ax]);
 
   const smile = useMemo(() => {
-    const parts = GRID_DELTAS.map((d) => terms(p, zOf(d)));
+    const curve = GRID_DELTAS.map((d) => { const t = terms(p, zOf(d)); return t.line + t.put + t.call; });
     const marks = (side: "bid" | "ask", ok: boolean) => {
       const pts = points.filter((q) => q.inside === ok && q[side] != null);
       const col = ok ? INSIDE : OUTSIDE;
@@ -35,17 +35,9 @@ export function LabCharts({ points, p, ax, showParts }: Props) {
         marker: { symbol: side === "bid" ? "triangle-down" : "triangle-up", size: 7, color: side === "bid" ? col : "rgba(0,0,0,0)", line: { color: col, width: 1.2 } },
       };
     };
-    const line = (y: number[], color: string, width: number, dash?: string) =>
-      ({ x: gx, y, type: "scatter", mode: "lines", hoverinfo: "skip", line: { color, width, dash } });
-    const data: unknown[] = [marks("bid", true), marks("ask", true), marks("bid", false), marks("ask", false)];
-    if (showParts) {
-      data.push(line(parts.map((t) => t.line), PARTS, 1.2, "dot"));
-      data.push(line(parts.map((t) => t.line + t.put), PARTS, 1.2, "dash"));
-      data.push(line(parts.map((t) => t.line + t.call), PARTS, 1.2, "dashdot"));
-    }
-    data.push(line(parts.map((t) => t.line + t.put + t.call), CURVE, 2.2));
-    return data;
-  }, [points, p, gx, showParts]);
+    return [marks("bid", true), marks("ask", true), marks("bid", false), marks("ask", false),
+      { x: gx, y: curve, type: "scatter", mode: "lines", hoverinfo: "skip", line: { color: CURVE, width: 2.2 } }];
+  }, [points, p, gx]);
 
   const resid = useMemo(() => {
     const two = points.filter((q) => q.resid != null).sort((a, b) => a.x - b.x);
@@ -61,17 +53,10 @@ export function LabCharts({ points, p, ax, showParts }: Props) {
   const convex = useMemo(() => {
     // d²σ/dx² with x = call Δ − 0.5, by central differences on the model curve
     const ds = GRID_DELTAS.filter((d) => d > 0.02 && d < 0.98), h = 1e-3;
-    const pick = (key: "line" | "put" | "call" | null) => (d: number) => { const t = terms(p, ppf(d)); return key ? t[key] : t.line + t.put + t.call; };
-    const d2 = (fn: (d: number) => number) => ds.map((d) => (fn(d + h) - 2 * fn(d) + fn(d - h)) / (h * h));
-    const xs = ds.map((d) => xOf(ax, d));
-    const data: unknown[] = [];
-    if (showParts) {
-      data.push({ x: xs, y: d2(pick("put")), type: "scatter", mode: "lines", hoverinfo: "skip", line: { color: PARTS, width: 1.2, dash: "dash" } });
-      data.push({ x: xs, y: d2(pick("call")), type: "scatter", mode: "lines", hoverinfo: "skip", line: { color: PARTS, width: 1.2, dash: "dashdot" } });
-    }
-    data.push({ x: xs, y: d2(pick(null)), type: "scatter", mode: "lines", hovertemplate: "%{y:.2f}<extra></extra>", line: { color: CURVE, width: 2 } });
-    return data;
-  }, [p, ax, showParts]);
+    const vol = (d: number) => { const t = terms(p, ppf(d)); return t.line + t.put + t.call; };
+    const y = ds.map((d) => (vol(d + h) - 2 * vol(d) + vol(d - h)) / (h * h));
+    return [{ x: ds.map((d) => xOf(ax, d)), y, type: "scatter", mode: "lines", hovertemplate: "%{y:.2f}<extra></extra>", line: { color: CURVE, width: 2 } }];
+  }, [p, ax]);
 
   const xTitle = ax === "delta" ? "1 − call delta (puts left, calls right)" : "Φ⁻¹(1 − call delta), wings stretched";
   const layouts = useMemo(() => ({
@@ -91,7 +76,6 @@ export function LabCharts({ points, p, ax, showParts }: Props) {
         <span><i style={{ background: INSIDE }} />inside (▽ bid, △ ask)</span>
         <span><i style={{ background: OUTSIDE }} />outside</span>
         <span><i style={{ background: CURVE }} />model</span>
-        {showParts && <span><i style={{ background: PARTS }} />parts: skew line, + put wing, + call wing</span>}
       </div>
       <div className="panel-head">Model − mid, vol points (two-sided quotes; band = ± half-spread, floored like the fitter)</div>
       <div className="chart-box"><Plot data={resid} layout={layouts.resid} height={200} /></div>

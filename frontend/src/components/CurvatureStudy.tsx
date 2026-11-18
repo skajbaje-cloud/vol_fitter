@@ -1,26 +1,23 @@
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { allCurvatureFigure, curvatureFigure, smileFigure } from "../lib/curvature";
-import { fmtNum, fmtTs } from "../lib/format";
-import type { NameOut, SplineExpiry, WingPeak } from "../types";
+import { fmtNum } from "../lib/format";
+import type { NameOut, SplineExpiry } from "../types";
+import { NameSnapshotFields, useNameSnapshot } from "./NameSnapshotPicker";
 import { Plot } from "./Plot";
 
 const vp = (v: number | null | undefined) => (v == null ? "—" : (v * 100).toFixed(2));
-const peak = (p: WingPeak) => (p.z == null ? "—" : `${p.z.toFixed(2)} · ${vp(p.s2)}${p.interior ? "" : " (edge)"}`);
+const ABOUT = "The smoothest-curvature curve that passes on or above every bid and on or below every ask. "
+  + "Curvature only bends where the quotes force it, so a peak is demanded by the market. Curvature in vol points per z². "
+  + "Quotes wider than 15 vol points are left out. Nothing is stored.";
 
 /** Bid-ask spline study: the smoothest-curvature curve between every bid and ask, per expiry. */
-export function CurvatureStudy({ names }: { names: NameOut[] }) {
-  const [name, setName] = useState(names[0]?.name ?? "");
-  const [snaps, setSnaps] = useState<string[]>([]);
-  const [snapshot, setSnapshot] = useState("");
+export function CurvatureStudy({ names, viewSwitch }: { names: NameOut[]; viewSwitch: ReactNode }) {
+  const picker = useNameSnapshot(names);
+  const { name, snapshot } = picker;
   const [list, setList] = useState<SplineExpiry[] | null>(null);
   const [expiry, setExpiry] = useState("");
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (!name) return;
-    api.snapshots(name).then((s) => { setSnaps(s); setSnapshot(s[0] ?? ""); }, (e: Error) => setError(e.message));
-  }, [name]);
 
   useEffect(() => {
     if (!name || !snapshot) return;
@@ -44,23 +41,15 @@ export function CurvatureStudy({ names }: { names: NameOut[] }) {
   return (
     <>
       <div className="toolbar">
-        <label className="field"><span className="field-label">Underlying</span>
-          <select value={name} onChange={(e) => setName(e.target.value)}>
-            {names.map((n) => <option key={n.name}>{n.name}</option>)}
-          </select>
-        </label>
-        <label className="field"><span className="field-label">Snapshot</span>
-          <select value={snapshot} onChange={(e) => setSnapshot(e.target.value)}>
-            {snaps.map((s) => <option key={s} value={s}>{fmtTs(s)}</option>)}
-          </select>
-        </label>
+        {viewSwitch}
+        <NameSnapshotFields picker={picker} names={names} />
         <label className="field"><span className="field-label">Expiry</span>
           <select value={expiry} onChange={(e) => setExpiry(e.target.value)}>
             {(list ?? []).filter((e) => e.status === "ok").map((e) => <option key={e.expiry}>{e.expiry}</option>)}
           </select>
         </label>
         <label className="check-label" title="In-the-money quotes are fitted too; they're hidden only to keep the chart readable">
-          <input type="checkbox" checked={showItm} onChange={(e) => setShowItm(e.target.checked)} /> Show in-the-money quotes
+          <input type="checkbox" checked={showItm} onChange={(e) => setShowItm(e.target.checked)} /> In-the-money quotes
         </label>
         {sel && <span className="muted toolbar-hint">
           T {sel.T.toFixed(3)} · F {fmtNum(sel.forward, 2)} · {sel.n_bounds} bounds, {sel.n_active} touching
@@ -72,7 +61,7 @@ export function CurvatureStudy({ names }: { names: NameOut[] }) {
       {list === null && !error ? <div className="panel muted empty">Fitting every expiry…</div> : (
         <>
           <div className="curv-pair">
-            <div className="panel"><div className="panel-head">Smile: bid–ask bounds, spline, current model</div>
+            <div className="panel"><div className="panel-head" title={ABOUT}>Smile: bid–ask bounds, spline, model <span className="muted">ⓘ</span></div>
               {smile ? <Plot data={smile.data} layout={smile.layout} height={340} /> : <div className="muted empty">No fit for this expiry.</div>}
             </div>
             <div className="panel"><div className="panel-head">Curvature s''(z)</div>
@@ -80,42 +69,11 @@ export function CurvatureStudy({ names }: { names: NameOut[] }) {
             </div>
           </div>
           <div className="panel" style={{ marginTop: 14 }}>
-            <div className="panel-head">Curvature across expiries <span className="muted">· lighter = longer dated, orange = selected, click a line to select it</span></div>
+            <div className="panel-head" title="Lighter = longer dated, orange = selected. Click a line to select that expiry.">Curvature across expiries</div>
             {all && <Plot data={all.data} layout={all.layout} height={300} onPointClick={pick} />}
-          </div>
-          <div className="panel" style={{ marginTop: 14 }}>
-            <div className="table-scroll">
-              <table className="data-table">
-                <thead><tr>
-                  <th>Expiry</th><th>T</th><th>Bounds</th><th>Touching</th><th>Broken</th><th>s''(0)</th>
-                  <th>Put peak z · s''</th><th>Call peak z · s''</th><th>Model 2κ put</th><th>Model 2κ call</th>
-                </tr></thead>
-                <tbody>
-                  {(list ?? []).map((e) => (
-                    <tr key={e.expiry} className={e.expiry === expiry ? "open" : ""} style={{ cursor: e.status === "ok" ? "pointer" : undefined }}
-                      onClick={() => e.status === "ok" && setExpiry(e.expiry)}>
-                      <td className="name">{e.expiry}</td><td>{e.T.toFixed(3)}</td>
-                      {e.status !== "ok" ? <td colSpan={8} className="muted">{e.message}</td> : (<>
-                        <td>{e.n_bounds}</td><td>{e.n_active}</td>
-                        <td>{e.n_broken ? `${e.n_broken} (≤ ${vp(e.max_break)} vp)` : <span className="muted">0</span>}</td>
-                        <td>{vp(e.s2_atm)}</td><td>{peak(e.put_peak)}</td><td>{peak(e.call_peak)}</td>
-                        <td>{e.model ? vp(2 * e.model.kappa_put) : "—"}</td><td>{e.model ? vp(2 * e.model.kappa_call) : "—"}</td>
-                      </>)}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
           </div>
         </>
       )}
-      <div className="note">
-        The curve is the smoothest-curvature one (least ∫s‴²) that passes on or above every bid and on or below every ask;
-        each quote's bid and ask sit at their own z, so bounds are slanted segments. Curvature varies only where the quotes
-        force it, so a peak here is demanded by the market. "Edge" means the peak is at the outermost quote. Curvature in vol
-        points per z². A bound is "broken" only when no smooth curve can respect it (conflicting quotes). Quotes wider than
-        15 vol points are left out (placeholder markets carry no information). Nothing is stored.
-      </div>
     </>
   );
 }

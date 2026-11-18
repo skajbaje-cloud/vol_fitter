@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { api, nearestExpiry } from "../api";
-import { Plot, SERIES_COLORS, axis } from "../components/Plot";
-import { Seg, X_OPTIONS } from "../components/Seg";
-import { fmtNum, fmtTs } from "../lib/format";
+import { fmtNum } from "../lib/format";
 import { bidAskPoints } from "../lib/smile";
 import type { NameOut, SeriesSpec, SmileOut, XMode } from "../types";
+import { NameSnapshotFields, useNameSnapshot } from "./NameSnapshotPicker";
+import { Plot, SERIES_COLORS, axis } from "./Plot";
+import { Seg, X_OPTIONS } from "./Seg";
 
 type GridMode = "maturity" | "underlying";
 interface Cell { key: string; title: string; smile: SmileOut }
@@ -37,24 +38,20 @@ function SmileCell({ cell, xMode, onOpen }: { cell: Cell; xMode: XMode; onOpen: 
 
 interface Props {
   names: NameOut[];
+  viewSwitch: ReactNode;
   onOpenInPlots: (spec: Omit<SeriesSpec, "id" | "baseline">) => void;
 }
 
-export function GridPage({ names, onOpenInPlots }: Props) {
+/** Many small smiles at once: every expiry of one snapshot, or one expiry across every active name. */
+export function SmileGrid({ names, viewSwitch, onOpenInPlots }: Props) {
   const [mode, setMode] = useState<GridMode>("maturity");
   const [xMode, setXMode] = useState<XMode>("delta");
-  const [name, setName] = useState(names[0]?.name ?? "");
-  const [snaps, setSnaps] = useState<string[]>([]);
-  const [snapshot, setSnapshot] = useState("");
+  const picker = useNameSnapshot(names);
+  const { name, snapshot } = picker;
   const [targets, setTargets] = useState<string[]>([]);
   const [target, setTarget] = useState("");
   const [cells, setCells] = useState<Cell[]>([]);
   const [status, setStatus] = useState("Loading…");
-
-  useEffect(() => {
-    if (!name) return;
-    api.snapshots(name).then((s) => { setSnaps(s); setSnapshot(s[0] ?? ""); });
-  }, [name]);
 
   // Underlying mode: every active name's latest snapshot, at the expiry nearest a chosen date.
   const active = useMemo(() => names.filter((n) => n.active), [names]);
@@ -97,26 +94,15 @@ export function GridPage({ names, onOpenInPlots }: Props) {
   return (
     <>
       <div className="toolbar">
+        {viewSwitch}
         <div className="field"><span className="field-label">Grid by</span>
           <Seg label="Grid by" value={mode} onChange={setMode} options={[
             { value: "maturity", label: "Maturity" }, { value: "underlying", label: "Underlying" },
           ]} />
         </div>
-        {mode === "maturity" ? (
-          <>
-            <label className="field"><span className="field-label">Underlying</span>
-              <select value={name} onChange={(e) => setName(e.target.value)}>
-                {names.map((n) => <option key={n.name}>{n.name}</option>)}
-              </select>
-            </label>
-            <label className="field"><span className="field-label">Snapshot</span>
-              <select value={snapshot} onChange={(e) => setSnapshot(e.target.value)}>
-                {snaps.map((s) => <option key={s} value={s}>{fmtTs(s)}</option>)}
-              </select>
-            </label>
-          </>
-        ) : (
-          <label className="field"><span className="field-label">Expiry (nearest per name, latest snapshot)</span>
+        {mode === "maturity" ? <NameSnapshotFields picker={picker} names={names} /> : (
+          <label className="field" title="Each name shows its expiry nearest this date, from its latest snapshot">
+            <span className="field-label">Expiry</span>
             <select value={target} onChange={(e) => setTarget(e.target.value)}>
               {targets.map((t) => <option key={t}>{t}</option>)}
             </select>

@@ -1,4 +1,4 @@
-// Client-side state for the Snapshot tab's names table: names typed in but not yet registered,
+// Client-side state for the Underlyings table: names typed in but not yet registered,
 // and the keys used to tick rows (pending and registered rows share one selection).
 import type { ChainCheck, ExpiryFilter, NameLookup } from "../types";
 

@@ -16,13 +16,14 @@ interface RowProps {
   names: NameOut[];
   focused: boolean;
   canRemove: boolean;
+  showBaseline: boolean;
   onPatch: (patch: Partial<SeriesSpec>) => void;
   onRemove: () => void;
   onBaseline: () => void;
   onFocus: () => void;
 }
 
-function SeriesRow({ spec, color, names, focused, canRemove, onPatch, onRemove, onBaseline, onFocus }: RowProps) {
+function SeriesRow({ spec, color, names, focused, canRemove, showBaseline, onPatch, onRemove, onBaseline, onFocus }: RowProps) {
   const [snaps, setSnaps] = useState<string[]>([]);
   const [mats, setMats] = useState<string[]>([]);
 
@@ -64,18 +65,17 @@ function SeriesRow({ spec, color, names, focused, canRemove, onPatch, onRemove, 
         </div>
         <div className="series-line">
           <select aria-label="Snapshot" value={spec.snapshot} onChange={(e) => pickSnapshot(e.target.value)}>
-            {(snaps.length ? snaps : [spec.snapshot]).map((s) => <option key={s} value={s}>{fmtTs(s)}</option>)}
+            {(snaps.length ? snaps : [spec.snapshot]).map((s) => <option key={s} value={s}>{fmtTs(s).slice(2, 16)}</option>)}
           </select>
-        </div>
-        <div className="series-line series-meta">
           <select aria-label="Show as" value={spec.type} onChange={(e) => onPatch({ type: e.target.value as SeriesType })}>
             {TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
-          <button type="button" className={`chip${spec.baseline ? " active" : ""}`} onClick={onBaseline}
-            title="Difference mode subtracts this series from every other one">
-            baseline
-          </button>
-          <span className="mono muted">#{spec.id}</span>
+          {showBaseline && (
+            <button type="button" className={`chip${spec.baseline ? " active" : ""}`} onClick={onBaseline}
+              title="Difference mode subtracts this series from every other one">
+              base
+            </button>
+          )}
         </div>
       </div>
       <button type="button" className="icon-btn" onClick={onRemove} disabled={!canRemove} title="Remove series" aria-label="Remove series">
@@ -89,12 +89,13 @@ interface Props {
   series: SeriesSpec[];
   names: NameOut[];
   focusedId: number | null;
+  showBaseline: boolean;
   onChange: (updater: (prev: SeriesSpec[]) => SeriesSpec[]) => void;
   onFocus: (id: number) => void;
   onAdd: () => void;
 }
 
-export function SeriesPanel({ series, names, focusedId, onChange, onFocus, onAdd }: Props) {
+export function SeriesPanel({ series, names, focusedId, showBaseline, onChange, onFocus, onAdd }: Props) {
   const patch = (id: number, p: Partial<SeriesSpec>) => onChange((prev) => prev.map((s) => (s.id === id ? { ...s, ...p } : s)));
   const remove = (id: number) =>
     onChange((prev) => {
@@ -109,7 +110,7 @@ export function SeriesPanel({ series, names, focusedId, onChange, onFocus, onAdd
       <div className="panel-body">
         {series.map((s, idx) => (
           <SeriesRow key={s.id} spec={s} color={SERIES_COLORS[idx % SERIES_COLORS.length]} names={names}
-            focused={s.id === focusedId} canRemove={series.length > 1}
+            focused={s.id === focusedId} canRemove={series.length > 1} showBaseline={showBaseline}
             onPatch={(p) => patch(s.id, p)} onRemove={() => remove(s.id)}
             onBaseline={() => setBaseline(s.id)} onFocus={() => onFocus(s.id)} />
         ))}

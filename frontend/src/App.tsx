@@ -1,26 +1,20 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "./api";
 import { fmtTs } from "./lib/format";
-import { AnalysisPage } from "./pages/AnalysisPage";
-import { FitsPage } from "./pages/FitsPage";
-import { GridPage } from "./pages/GridPage";
 import { LabPage } from "./pages/LabPage";
+import { LogsPage } from "./pages/LogsPage";
 import { PlotsPage } from "./pages/PlotsPage";
-import { SchedulePage } from "./pages/SchedulePage";
-import { SnapshotPage } from "./pages/SnapshotPage";
+import { UnderlyingsPage } from "./pages/UnderlyingsPage";
 import type { NameOut, Route, SeriesSpec } from "./types";
 
 const icon = (d: string) => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d={d} /></svg>
 );
-const NAV: { route: Route; label: string; icon: ReactNode; soon?: boolean }[] = [
+const NAV: { route: Route; label: string; icon: ReactNode }[] = [
   { route: "plots", label: "Plots", icon: icon("M3 17l6-6 4 4 8-8M15 7h6v6") },
-  { route: "grid", label: "Grid", icon: icon("M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z") },
-  { route: "lab", label: "Smile Lab", icon: icon("M4 6h16M4 12h16M4 18h16M9 4v4M15 10v4M7 16v4") },
-  { route: "snapshot", label: "Snapshot", icon: icon("M5 12a7 7 0 1 1 2.05 4.95M5 12V7m0 5h5") },
-  { route: "schedule", label: "Schedule", icon: icon("M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0") },
-  { route: "fits", label: "Fits", icon: icon("M4 19V5m0 14h16M8 15l3-4 3 3 4-6") },
-  { route: "analysis", label: "Analysis", icon: icon("M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.3-4.3") },
+  { route: "lab", label: "Lab", icon: icon("M4 6h16M4 12h16M4 18h16M9 4v4M15 10v4M7 16v4") },
+  { route: "underlyings", label: "Underlyings", icon: icon("M3 5h18M3 12h18M3 19h18M8 5v14") },
+  { route: "logs", label: "Logs", icon: icon("M5 4h14v16H5zM8 8h8M8 12h8M8 16h5") },
 ];
 const ROUTES = NAV.map((n) => n.route);
 const routeFromHash = (): Route => (ROUTES.includes(location.hash.slice(1) as Route) ? (location.hash.slice(1) as Route) : "plots");
@@ -90,14 +84,12 @@ export function App() {
   const snapped = useMemo(() => (names ?? []).filter((n) => n.last_snapshot_ts), [names]);
   const pages: Record<Route, () => ReactNode> = {
     plots: () => (series === null ? <div className="muted empty">Loading…</div>
-      : series.length ? <PlotsPage names={snapped} series={series} setSeries={updateSeries} resetKey={plotsResetKey} />
-      : <div className="muted empty">No priced snapshots yet. Run one from the Snapshot page.</div>),
-    grid: () => <GridPage names={snapped} onOpenInPlots={openInPlots} />,
-    lab: () => <LabPage names={snapped} />,
-    snapshot: () => <SnapshotPage names={names!} onNamesChanged={refreshAfterRun} />,
-    schedule: () => <SchedulePage names={names!} />,
-    fits: () => <FitsPage names={snapped} onOpenInPlots={openInPlots} />,
-    analysis: () => <AnalysisPage names={snapped} onOpenInPlots={openInPlots} />,
+      : series.length ? <PlotsPage names={snapped} series={series} setSeries={updateSeries} resetKey={plotsResetKey} onOpenInPlots={openInPlots} />
+      : <div className="muted empty">No priced snapshots yet. Take one from the Underlyings tab.</div>),
+    lab: () => (snapped.length ? <LabPage names={snapped} active={route === "lab"} onOpenInPlots={openInPlots} />
+      : <div className="muted empty">No priced snapshots yet. Take one from the Underlyings tab.</div>),
+    underlyings: () => <UnderlyingsPage names={names!} onNamesChanged={refreshAfterRun} onOpenInPlots={openInPlots} />,
+    logs: () => <LogsPage />,
   };
 
   return (
@@ -107,19 +99,16 @@ export function App() {
         {NAV.map((n) => (
           <a key={n.route} href={`#${n.route}`} className={`nav-item${route === n.route ? " active" : ""}`}
             aria-current={route === n.route ? "page" : undefined}>
-            {n.icon}{n.label}{n.soon && <span className="badge">SOON</span>}
+            {n.icon}{n.label}
           </a>
         ))}
-      </nav>
-
-      <header className="topbar">
-        <h1>{NAV.find((n) => n.route === route)?.label}</h1>
         {latest && (
-          <span className="status-pill mono">
-            <span className="led" />{names?.length ?? 0} name{names?.length === 1 ? "" : "s"} · latest {latest.name} {fmtTs(latest.ts)}
-          </span>
+          <div className="rail-status mono" title={`Latest snapshot: ${latest.name} ${fmtTs(latest.ts)}`}>
+            <span className="led" />{names?.length ?? 0} name{names?.length === 1 ? "" : "s"}<br />
+            latest {latest.name}<br />{fmtTs(latest.ts).slice(5, 16)}
+          </div>
         )}
-      </header>
+      </nav>
 
       <main className="main">
         {error && <div className="note error">{error}</div>}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { ParamGrid } from "./ParamGrid";
 import { Seg } from "./Seg";
@@ -9,13 +9,15 @@ import type { ExpiryFit, FitCoverage, NameOut, SeriesSpec } from "../types";
 
 interface Props {
   names: NameOut[];
+  viewSwitch: ReactNode;
+  active: boolean;                        // on screen: re-read fits each time it comes into view
   onOpenInPlots: (spec: Omit<SeriesSpec, "id" | "baseline">) => void;
 }
 
 const key = (r: ParamRow) => `${r.name}|${r.snapshot}`;
 
 /** Fitted smile parameters against T: one row per name+snapshot, one column per parameter. */
-export function ParamStudy({ names, onOpenInPlots }: Props) {
+export function ParamStudy({ names, viewSwitch, active, onOpenInPlots }: Props) {
   const [coverage, setCoverage] = useState<FitCoverage[] | null>(null);
   const [rows, setRows] = useState<ParamRow[] | null>(null);
   const [fits, setFits] = useState<Map<string, ExpiryFit[]>>(new Map());
@@ -36,7 +38,7 @@ export function ParamStudy({ names, onOpenInPlots }: Props) {
       setRows((prev) => prev ?? defaultRows(c, order));
     }, (e: Error) => setError(e.message));
   }, [order]);
-  useEffect(() => { load(); }, []);                // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (active) load(); }, [active]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch each row's per-expiry fits once; rows sharing a name+snapshot share the request.
   useEffect(() => {
@@ -66,7 +68,8 @@ export function ParamStudy({ names, onOpenInPlots }: Props) {
   return (
     <>
       <div className="toolbar">
-        <label className="field"><span className="field-label">Add a row</span>
+        {viewSwitch}
+        <label className="field"><span className="field-label">Rows</span>
           <select value="" onChange={(e) => e.target.value && add(e.target.value)}>
             <option value="">+ Add name…</option>
             {fittedNames.map((n) => <option key={n} value={n}>{n}</option>)}
@@ -83,25 +86,17 @@ export function ParamStudy({ names, onOpenInPlots }: Props) {
         <div className="field"><span className="field-label">X axis</span>
           <Seg label="X axis" value={x} onChange={setX} options={[{ value: "T", label: "T" }, { value: "sqrtT", label: "√T" }]} />
         </div>
-        <div className="field"><span className="field-label">Rows</span>
-          <div className="pgrid-actions">
-            <button type="button" className="btn-secondary btn-xs" onClick={() => coverage && setRows(defaultRows(coverage, order))}>Reset</button>
-            <button type="button" className="btn-secondary btn-xs" onClick={() => setRows([])}>Clear</button>
-            <button type="button" className="btn-secondary btn-xs" onClick={load} title="Re-read fits (after a refit on the Fits tab)">Refresh</button>
-          </div>
+        <div className="pgrid-actions">
+          <button type="button" className="btn-secondary btn-xs" onClick={() => coverage && setRows(defaultRows(coverage, order))}>Reset rows</button>
         </div>
         {error && <span className="error-text toolbar-hint">{error}</span>}
       </div>
-      <div className="panel">
+      <div className="panel" title="Hollow points: the fit failed or missed the quotes. Click a point to open that smile in Plots.">
         {rows === null ? <div className="muted empty">Loading…</div>
           : rows.length === 0 ? <div className="muted empty">
-            {fittedNames.length ? "No rows. Add a name above, or press Reset." : "No fits yet. Run some from the Fits tab."}</div>
+            {fittedNames.length ? "No rows. Add a name above, or press Reset rows." : "No fits yet. Run some from the Underlyings tab."}</div>
           : <ParamGrid rows={rowFits} opts={opts} snapshotsFor={snapshotsFor}
               onSnapshot={setSnapshot} onRemove={remove} onOpenInPlots={onOpenInPlots} />}
-      </div>
-      <div className="note">
-        Raw fitted parameters, not normalised. Hollow points are expiries whose fit failed or missed the quotes.
-        Hover a point for its expiry; click it to open that smile in Plots.
       </div>
     </>
   );

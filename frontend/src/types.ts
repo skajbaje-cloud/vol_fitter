@@ -1,7 +1,7 @@
 export type XMode = "delta" | "strike" | "moneyness";
 export type YMode = "levels" | "diff";
 export type SeriesType = "bidask" | "mid" | "fitted";
-export type Route = "plots" | "grid" | "lab" | "snapshot" | "schedule" | "fits" | "analysis";
+export type Route = "plots" | "lab" | "underlyings" | "logs";
 
 export type ExpiryFilter = "all" | "monthly";
 

@@ -1,6 +1,5 @@
-// Client-side state for the Schedule tab: staged drafts per name, validation and bulk apply.
+// Client-side schedule state for the Underlyings tab: staged drafts per name, validation and bulk apply.
 import type { Day, ScheduleItemIn, ScheduleRow } from "../types";
-import { todayIn, wallToInstant } from "./tz";
 
 export const MAX_SLOTS = 5;          // mirrors config.SCHEDULE_MAX_SLOTS
 export const MIN_GAP_MIN = 10;       // mirrors config.SCHEDULE_MIN_GAP_MIN
@@ -53,24 +52,3 @@ export const toItem = (name: string, d: Draft): ScheduleItemIn => {
   const n = normalise(d);
   return { name, times: filled(n), days: n.days, enabled: n.enabled };
 };
-
-export interface LoadBucket { at: Date; names: string[]; estSec: number }
-
-/** Today's firings (each name's own local today), grouped by instant, for the load strip. */
-export function loadBuckets(rows: ScheduleRow[], drafts: Record<string, Draft>, now = new Date()): LoadBucket[] {
-  const byMinute = new Map<number, LoadBucket>();
-  for (const r of rows) {
-    const d = drafts[r.name];
-    if (!r.timezone || !r.active || !d?.enabled) continue;
-    for (const t of filled(d)) {
-      if (!TIME_RE.test(t)) continue;
-      const at = wallToInstant(r.timezone, todayIn(r.timezone, now), t);
-      const key = Math.round(at.getTime() / 60000);
-      const b = byMinute.get(key) ?? { at, names: [], estSec: 0 };
-      b.names.push(r.name);
-      b.estSec += r.est_duration_sec ?? 60;
-      byMinute.set(key, b);
-    }
-  }
-  return [...byMinute.values()].sort((a, b) => a.at.getTime() - b.at.getTime());
-}

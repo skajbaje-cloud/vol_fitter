@@ -46,7 +46,7 @@ export function SmileChart({ series, smiles, xMode, yMode, height = 500 }: Props
       const color = SERIES_COLORS[idx % SERIES_COLORS.length];
       const label = seriesLabel(spec);
       if (spec.type === "fitted" && !hasFit(s)) {
-        notes.add("Fitted curves appear once per-expiry fitting exists (Phase 2); nothing to draw for “Fitted” yet.");
+        notes.add("No stored fit for this expiry yet: fit it from the Underlyings tab.");
         return;
       }
 

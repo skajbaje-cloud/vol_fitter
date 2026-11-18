@@ -48,11 +48,17 @@ looked up from the `names` table.
 
 ## Web console
 
-React + Plotly frontend in `frontend/`, served by FastAPI. Pages: Plots
-(smiles vs 1 − call Δ, strike or moneyness; overlay and diff series),
-Grid (all expiries of one snapshot, or one expiry across names), Snapshot
-(run snapshots, watch progress). Fits and Analysis are placeholders until
-fitting exists.
+React + Plotly frontend in `frontend/`, served by FastAPI. Four tabs:
+
+- **Plots**: smiles vs 1 − call Δ, strike or moneyness; overlay and diff
+  series. The Grid view shows every expiry of one snapshot, or one expiry
+  across names.
+- **Lab**: drag the smile model's parameters against the quotes, the
+  bid–ask spline curvature study, and fitted parameters vs T.
+- **Underlyings**: one row per name to register, snapshot, schedule, fit and
+  delete. Delete is soft: the data is kept, and adding the RIC again brings
+  it back.
+- **Logs**: recent server log lines (in memory, cleared on restart).
 
 Because the repo lives on Google Drive (which can't hold `node_modules`),
 npm/TypeScript/Vite run from a local toolchain under `~\.vol_fitter\` via

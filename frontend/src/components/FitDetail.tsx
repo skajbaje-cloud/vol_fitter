@@ -55,8 +55,8 @@ export function FitDetail({ name, snapshots, busy, version, onFitSnapshot, onOpe
           <table className="data-table">
             <thead>
               <tr>
-                <th>Expiry</th><th>T</th><th>Forward</th><th>Fit</th><th>Inside</th><th>RMSE</th><th>Quotes</th>
-                <th>Outliers</th><th>σ atm</th><th>Skew</th><th>κ put</th><th>κ call</th><th>Anchor</th><th />
+                <th>Expiry</th><th>T</th><th>Fit</th><th>Inside</th><th>RMSE</th><th>Quotes</th>
+                <th>σ atm</th><th>Skew</th><th>κ put</th><th>κ call</th><th />
               </tr>
             </thead>
             <tbody>
@@ -64,18 +64,15 @@ export function FitDetail({ name, snapshots, busy, version, onFitSnapshot, onOpe
                 <tr key={r.expiry_date}>
                   <td className="name">{r.expiry_date}</td>
                   <td>{fmtNum(r.T, 3)}</td>
-                  <td>{fmtNum(r.forward, 2)}</td>
                   <td>{r.fit_status ? <span className={`pill ${STATUS[r.fit_status] ?? "warn"}`}><span className="led" />{r.fit_status}
                     {r.smile_quality_flag === "miss" ? " · miss" : ""}</span> : <span className="muted">not fitted</span>}</td>
                   <td>{fmtPct(r.pct_inside, 0)}</td>
                   <td>{r.smile_fit_rmse == null ? "—" : `${(r.smile_fit_rmse * 100).toFixed(2)} vp`}</td>
                   <td>{r.n_fit_quotes ?? "—"}</td>
-                  <td>{r.n_outliers ?? "—"}</td>
                   <td>{fmtPct(r.sigma_atm, 2)}</td>
                   <td>{fmtNum(r.skew, 4)}</td>
                   <td>{fmtNum(r.kappa_put, 4)}</td>
                   <td>{fmtNum(r.kappa_call, 4)}</td>
-                  <td className="muted">{r.anchor_snapshot_ts ? fmtTs(r.anchor_snapshot_ts).slice(5, 16) : "—"}</td>
                   <td><button type="button" className="btn-secondary btn-xs"
                     onClick={() => onOpenInPlots({ name, snapshot: open, expiry: r.expiry_date, type: r.fit_status ? "fitted" : "bidask" })}>
                     Plot</button></td>

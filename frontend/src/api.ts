@@ -16,7 +16,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     }
     throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
   }
-  return res.json() as Promise<T>;
+  return (res.status === 204 ? undefined : res.json()) as Promise<T>;
 }
 
 // A snapshot's maturities and smiles never change once written, so cache them.
@@ -48,18 +48,22 @@ export const api = {
   runSnapshots: (names: string[]) => post<JobOut[]>("api/snapshots/run", { names }),
   registerNames: (body: NameIn[]) => post<NameOut[]>("api/names", body),
   patchName: (name: string, patch: NamePatch) => post<NameOut>(`api/names/${enc(name)}`, patch, "PATCH"),
+  /** Soft delete: hidden everywhere, data kept; registering the RIC again restores it. */
+  deleteName: (name: string) => request<void>(`api/names/${enc(name)}`, { method: "DELETE" }),
   lookup: (rics: string[]) => post<JobOut>("api/names/lookup", { rics }),
   checkChain: (name: string, chain_ric: string) => post<JobOut>("api/names/check", { name, chain_ric }),
   schedule: () => request<ScheduleOut>("api/schedule"),
   saveSchedule: (items: ScheduleItemIn[]) => post<ScheduleOut>("api/schedule", { items }, "PUT"),
   schedulerStatus: () => request<SchedulerStatus>("api/scheduler/status"),
   pauseScheduler: (paused: boolean) => post<SchedulerStatus>("api/scheduler/pause", { paused }),
-  runFits: (names: string[], mode: FitMode, anchor: boolean, snapshot_ts?: string) =>
-    post<JobOut[]>("api/fits/run", { names, mode, anchor, snapshot_ts }),
+  /** Every fit starts from (and anchors to) the previous snapshot's fit. */
+  runFits: (names: string[], mode: FitMode, snapshot_ts?: string) =>
+    post<JobOut[]>("api/fits/run", { names, mode, anchor: true, snapshot_ts }),
   fitCoverage: () => request<FitCoverage[]>("api/fits/coverage"),
   /** Not cached: the model overlay changes on a refit (the server caches the spline fits themselves). */
   splineStudy: (name: string, snapshot: string) => request<SplineExpiry[]>(`api/spline/${enc(name)}/${enc(snapshot)}`),
   expiryFits: (name: string, snapshot: string) => request<ExpiryFit[]>(`api/fits/${enc(name)}/${enc(snapshot)}`),
+  logs: () => request<string[]>("api/logs"),
   /** A fit rewrites a snapshot's params, so cached smiles (which carry them) must be re-read. */
   forgetSmiles: () => { for (const k of [...cache.keys()]) if (k.startsWith("api/smile?")) cache.delete(k); },
 };
