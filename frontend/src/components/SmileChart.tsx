@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { X_LABELS, bidAskPoints, hasFit, interp, midCurve, type Pt } from "../lib/smile";
+import { X_LABELS, bidAskPoints, fittedCurve, hasFit, interp, midCurve, type Pt } from "../lib/smile";
 import { seriesLabel } from "../lib/format";
 import type { SeriesSpec, SmileOut, XMode, YMode } from "../types";
 import { Plot, SERIES_COLORS, axis } from "./Plot";
@@ -21,10 +21,10 @@ function scatter(pts: Pt[], name: string, color: string, symbol: string, label: 
   };
 }
 
-function line(pts: Pt[], name: string, color: string, label: string, fmt: string) {
+function line(pts: Pt[], name: string, color: string, label: string, fmt: string, smooth = false) {
   return {
     x: pts.map((p) => p.x), y: pts.map((p) => p.y), customdata: pts.map((p) => p.strike),
-    mode: "lines+markers", type: "scatter", name,
+    mode: smooth ? "lines" : "lines+markers", type: "scatter", name,
     line: { color, width: 2 }, marker: { color, size: 5 },
     hovertemplate: `K %{customdata:,.0f}<br>x %{x:.3f}<br>%{y:${fmt}}<extra>${label}</extra>`,
   };
@@ -35,10 +35,10 @@ export function SmileChart({ series, smiles, xMode, yMode, height = 500 }: Props
     const traces: unknown[] = [];
     const notes = new Set<string>();
     const baseline = series.find((s) => s.baseline) ?? series[0];
+    // A "fitted" series compares by its model curve, anything else by its mid.
+    const curveOf = (spec: SeriesSpec, s: SmileOut) => (spec.type === "fitted" ? fittedCurve(s, xMode) : midCurve(s, xMode));
     const baseSmile = baseline ? smiles[baseline.id] : undefined;
-    const baseCurve = baseSmile ? midCurve(baseSmile, xMode) : [];
-    if (yMode === "diff" && series.length < 2)
-      notes.add("Difference mode subtracts the baseline from the other series — add a second series to compare.");
+    const baseCurve = baseSmile ? curveOf(baseline, baseSmile) : [];
 
     series.forEach((spec, idx) => {
       const s = smiles[spec.id];
@@ -46,7 +46,7 @@ export function SmileChart({ series, smiles, xMode, yMode, height = 500 }: Props
       const color = SERIES_COLORS[idx % SERIES_COLORS.length];
       const label = seriesLabel(spec);
       if (spec.type === "fitted" && !hasFit(s)) {
-        notes.add("No stored fit for this expiry yet: fit it from the Underlyings tab.");
+        if (yMode === "levels") notes.add(`${label}: no stored fit for this expiry yet (fit it from the Underlyings tab).`);
         return;
       }
 
@@ -57,7 +57,7 @@ export function SmileChart({ series, smiles, xMode, yMode, height = 500 }: Props
             line: { color, width: 1.5, dash: "dot" }, hoverinfo: "skip" });
           return;
         }
-        const diff = midCurve(s, xMode)
+        const diff = curveOf(spec, s)
           .map((p) => ({ ...p, base: interp(baseCurve, p.x) }))
           .filter((p) => p.base != null)
           .map((p) => ({ ...p, y: p.y - (p.base as number) }));
@@ -71,6 +71,8 @@ export function SmileChart({ series, smiles, xMode, yMode, height = 500 }: Props
         const { bid, ask } = bidAskPoints(s, xMode);
         traces.push(scatter(bid, `${label} bid`, color, "triangle-down", label, String(spec.id)));
         traces.push(scatter(ask, `${label} ask`, color, "triangle-up-open", label, String(spec.id)));
+      } else if (spec.type === "fitted") {
+        traces.push(line(fittedCurve(s, xMode), `${label} fitted`, color, label, ".2%", true));
       } else {
         traces.push(line(midCurve(s, xMode), `${label} mid`, color, label, ".2%"));
       }
@@ -83,9 +85,10 @@ export function SmileChart({ series, smiles, xMode, yMode, height = 500 }: Props
       margin: { l: 56, r: 16, t: 10, b: 44 },
       xaxis: axis({ title: { text: X_LABELS[xMode] } }),
       yaxis: axis({
-        title: { text: yMode === "diff" ? "Δ implied vol vs baseline (mid)" : "implied vol" },
+        title: { text: yMode === "diff" ? "minus baseline" : "implied vol" },
         tickformat: yMode === "diff" ? "+.1%" : ".0%",
       }),
+      showlegend: yMode === "levels",            // the difference chart sits under the levels one and shares its colors
       legend: { orientation: "h", y: -0.16, font: { size: 10.5 } },
     }),
     [xMode, yMode],

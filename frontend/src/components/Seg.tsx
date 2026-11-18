@@ -25,6 +25,7 @@ export function Seg<T extends string>({ value, options, onChange, label }: Props
 
 export const X_OPTIONS = [
   { value: "delta" as const, label: "1 − call Δ" },
+  { value: "z" as const, label: "Φ⁻¹(1 − Δ)" },
   { value: "strike" as const, label: "Strike" },
   { value: "moneyness" as const, label: "Moneyness" },
 ];

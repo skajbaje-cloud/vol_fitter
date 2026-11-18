@@ -53,8 +53,10 @@ export function SmileGrid({ names, viewSwitch, onOpenInPlots }: Props) {
   const [cells, setCells] = useState<Cell[]>([]);
   const [status, setStatus] = useState("Loading…");
 
-  // Underlying mode: every active name's latest snapshot, at the expiry nearest a chosen date.
-  const active = useMemo(() => names.filter((n) => n.active), [names]);
+  // Underlying mode: every active name in the chosen group, latest snapshot, at the expiry nearest a chosen date.
+  const [group, setGroup] = useState("");                    // "" = every group
+  const groups = useMemo(() => [...new Set(names.map((n) => n.group_name).filter((g): g is string => !!g))].sort(), [names]);
+  const active = useMemo(() => names.filter((n) => n.active && (!group || n.group_name === group)), [names, group]);
   useEffect(() => {
     if (mode !== "underlying") return;
     Promise.all(active.map(async (n) => {
@@ -101,12 +103,20 @@ export function SmileGrid({ names, viewSwitch, onOpenInPlots }: Props) {
           ]} />
         </div>
         {mode === "maturity" ? <NameSnapshotFields picker={picker} names={names} /> : (
-          <label className="field" title="Each name shows its expiry nearest this date, from its latest snapshot">
-            <span className="field-label">Expiry</span>
-            <select value={target} onChange={(e) => setTarget(e.target.value)}>
-              {targets.map((t) => <option key={t}>{t}</option>)}
-            </select>
-          </label>
+          <>
+            <label className="field"><span className="field-label">Group</span>
+              <select value={group} onChange={(e) => setGroup(e.target.value)}>
+                <option value="">All active</option>
+                {groups.map((g) => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </label>
+            <label className="field" title="Each name shows its expiry nearest this date, from its latest snapshot">
+              <span className="field-label">Expiry</span>
+              <select value={target} onChange={(e) => setTarget(e.target.value)}>
+                {targets.map((t) => <option key={t}>{t}</option>)}
+              </select>
+            </label>
+          </>
         )}
         <div className="field"><span className="field-label">X axis</span>
           <Seg label="X axis" value={xMode} options={X_OPTIONS} onChange={setXMode} />

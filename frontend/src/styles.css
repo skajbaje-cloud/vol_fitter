@@ -87,6 +87,8 @@ input::placeholder { color: var(--text-muted); }
 .btn:hover:not(:disabled) { background: var(--accent-hover); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .spacer { flex: 1; }
+.step-select { display: flex; gap: 4px; }
+.step-select .btn-secondary { padding: 4px 9px; font-size: 14px; line-height: 1; }
 .chip {
   font: 10px var(--font-mono); padding: 2px 7px; border-radius: 999px; cursor: pointer;
   border: 1px solid var(--border-strong); color: var(--text-muted); background: none;

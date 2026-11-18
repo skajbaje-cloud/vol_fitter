@@ -6,6 +6,7 @@ import { NameSnapshotFields, useNameSnapshot } from "../components/NameSnapshotP
 import { ParamSliders } from "../components/ParamSliders";
 import { ParamStudy } from "../components/ParamStudy";
 import { Seg } from "../components/Seg";
+import { StepSelect } from "../components/StepSelect";
 import { type LabAxis, type ZParams, evaluate, fittedParams, guessParams } from "../lib/zquad";
 import type { NameOut, SeriesSpec, SmileOut } from "../types";
 
@@ -84,12 +85,10 @@ function SmileLab({ names, viewSwitch }: { names: NameOut[]; viewSwitch: ReactNo
     <>
       <div className="toolbar">
         {viewSwitch}
-        <NameSnapshotFields picker={picker} names={names} />
-        <label className="field"><span className="field-label">Expiry</span>
-          <select value={expiry} onChange={(e) => setExpiry(e.target.value)}>
-            {mats.map((m) => <option key={m} value={m}>{m}</option>)}
-          </select>
-        </label>
+        <NameSnapshotFields picker={picker} names={names} step />
+        <div className="field"><span className="field-label">Expiry</span>
+          <StepSelect label="expiry" value={expiry} onChange={setExpiry} options={mats.map((m) => ({ value: m, label: m }))} />
+        </div>
         <div className="field"><span className="field-label">X axis</span>
           <Seg label="X axis" value={ax} options={AXES} onChange={setAx} /></div>
       </div>

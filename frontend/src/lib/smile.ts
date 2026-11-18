@@ -1,4 +1,5 @@
 import type { SmileOut, XMode } from "../types";
+import { fittedParams, volAtDelta, zOf } from "./zquad";
 
 export interface Pt {
   x: number;
@@ -9,6 +10,7 @@ export interface Pt {
 
 export const X_LABELS: Record<XMode, string> = {
   delta: "1 − call Δ equivalent",
+  z: "Φ⁻¹(1 − call Δ), wings stretched",
   strike: "Strike",
   moneyness: "Moneyness (K / F)",
 };
@@ -20,9 +22,11 @@ function forwardOf(s: SmileOut): number {
 function xOf(mode: XMode, strike: number, isCall: boolean, delta: number, forward: number): number {
   if (mode === "strike") return strike;
   if (mode === "moneyness") return strike / forward;
-  const callDeltaEquiv = isCall ? delta : 1 + delta;
-  return 1 - callDeltaEquiv;
+  return xOfCallDelta(mode, isCall ? delta : 1 + delta);
 }
+
+/** Chart x for a call-equivalent delta: 1 − Δ (puts left), or Φ⁻¹(1 − Δ) = −z (same orientation, wings stretched). */
+const xOfCallDelta = (mode: "delta" | "z", d: number) => (mode === "z" ? -zOf(d) : 1 - d);
 
 /** Bid and ask IV points for every two-sided quote, calls and puts together. */
 export function bidAskPoints(s: SmileOut, mode: XMode): { bid: Pt[]; ask: Pt[] } {
@@ -52,6 +56,22 @@ export function midCurve(s: SmileOut, mode: XMode): Pt[] {
     const [bIv, aIv, bD, aD] = [q.bid_iv[i], q.ask_iv[i], q.bid_delta[i], q.ask_delta[i]];
     if (bIv == null || aIv == null || bD == null || aD == null) continue;
     out.push({ x: xOf(mode, k, c, (bD + aD) / 2, F), y: (bIv + aIv) / 2, strike: k, isCall: c });
+  }
+  return out.sort((a, b) => a.x - b.x);
+}
+
+/** The stored fit evaluated at every out-of-the-money strike (one-sided quotes too); empty if not fitted. */
+export function fittedCurve(s: SmileOut, mode: XMode): Pt[] {
+  const p = fittedParams(s);
+  if (!p) return [];
+  const q = s.quotes;
+  const F = forwardOf(s);
+  const out: Pt[] = [];
+  for (let i = 0; i < q.strike.length; i++) {
+    const [k, c, d] = [q.strike[i], q.is_call[i], q.fwd_delta[i]];
+    if (c !== k >= F || d == null) continue;
+    const x = mode === "strike" ? k : mode === "moneyness" ? k / F : xOfCallDelta(mode, d);
+    out.push({ x, y: volAtDelta(p, d), strike: k, isCall: c });
   }
   return out.sort((a, b) => a.x - b.x);
 }

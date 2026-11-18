@@ -1,4 +1,4 @@
-export type XMode = "delta" | "strike" | "moneyness";
+export type XMode = "delta" | "z" | "strike" | "moneyness";
 export type YMode = "levels" | "diff";
 export type SeriesType = "bidask" | "mid" | "fitted";
 export type Route = "plots" | "lab" | "underlyings" | "logs";

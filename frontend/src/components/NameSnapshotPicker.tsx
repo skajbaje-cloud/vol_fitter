@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { fmtTs } from "../lib/format";
 import type { NameOut } from "../types";
+import { StepSelect } from "./StepSelect";
 
 export interface Picker {
   name: string;
@@ -38,7 +39,8 @@ export function useNameSnapshot(names: NameOut[]): Picker {
   return { name, setName, snaps: snapshot ? snaps : [], snapshot, setSnapshot: (ts) => setSnap({ name, ts }) };
 }
 
-export function NameSnapshotFields({ picker, names }: { picker: Picker; names: NameOut[] }) {
+/** step: ‹ › buttons beside the snapshot, to walk through them one at a time. */
+export function NameSnapshotFields({ picker, names, step }: { picker: Picker; names: NameOut[]; step?: boolean }) {
   return (
     <>
       <label className="field"><span className="field-label">Underlying</span>
@@ -46,11 +48,18 @@ export function NameSnapshotFields({ picker, names }: { picker: Picker; names: N
           {names.map((n) => <option key={n.name}>{n.name}</option>)}
         </select>
       </label>
-      <label className="field"><span className="field-label">Snapshot</span>
-        <select value={picker.snapshot} onChange={(e) => picker.setSnapshot(e.target.value)}>
-          {picker.snaps.map((s) => <option key={s} value={s}>{fmtTs(s)}</option>)}
-        </select>
-      </label>
+      {step ? (
+        <div className="field"><span className="field-label">Snapshot</span>
+          <StepSelect label="snapshot" value={picker.snapshot} onChange={picker.setSnapshot} newestFirst
+            options={picker.snaps.map((s) => ({ value: s, label: fmtTs(s) }))} />
+        </div>
+      ) : (
+        <label className="field"><span className="field-label">Snapshot</span>
+          <select value={picker.snapshot} onChange={(e) => picker.setSnapshot(e.target.value)}>
+            {picker.snaps.map((s) => <option key={s} value={s}>{fmtTs(s)}</option>)}
+          </select>
+        </label>
+      )}
     </>
   );
 }

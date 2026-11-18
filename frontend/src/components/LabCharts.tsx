@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { type LabAxis, type LabPoint, type ZParams, ppf, terms, xOf, zOf } from "../lib/zquad";
+import { type LabAxis, type LabPoint, type ZParams, terms, xOf, zOf } from "../lib/zquad";
 import { Plot, axis } from "./Plot";
 
 // Colours mirror the CSS tokens: accent = inside, critical = outside.
@@ -50,22 +50,12 @@ export function LabCharts({ points, p, ax }: Props) {
     ];
   }, [points]);
 
-  const convex = useMemo(() => {
-    // d²σ/dx² with x = call Δ − 0.5, by central differences on the model curve
-    const ds = GRID_DELTAS.filter((d) => d > 0.02 && d < 0.98), h = 1e-3;
-    const vol = (d: number) => { const t = terms(p, ppf(d)); return t.line + t.put + t.call; };
-    const y = ds.map((d) => (vol(d + h) - 2 * vol(d) + vol(d - h)) / (h * h));
-    return [{ x: ds.map((d) => xOf(ax, d)), y, type: "scatter", mode: "lines", hovertemplate: "%{y:.2f}<extra></extra>", line: { color: CURVE, width: 2 } }];
-  }, [p, ax]);
-
   const xTitle = ax === "delta" ? "1 − call delta (puts left, calls right)" : "Φ⁻¹(1 − call delta), wings stretched";
   const layouts = useMemo(() => ({
     smile: { margin: { l: 50, r: 12, t: 20, b: 40 }, showlegend: false, shapes: f.shapes, annotations: f.labels,
       xaxis: axis({ range: f.range, title: { text: xTitle } }), yaxis: axis({ range: [0.08, 0.5], tickformat: ".0%", title: { text: "implied vol" } }) },
     resid: { margin: { l: 50, r: 12, t: 6, b: 30 }, showlegend: false, shapes: f.shapes,
       xaxis: axis({ range: f.range }), yaxis: axis({ range: [-2.5, 2.5], title: { text: "vol pts" } }) },
-    convex: { margin: { l: 50, r: 12, t: 6, b: 30 }, showlegend: false, shapes: f.shapes,
-      xaxis: axis({ range: f.range }), yaxis: axis({ title: { text: "vol / x²" } }) },
   }), [f, xTitle]);
 
   return (
@@ -79,8 +69,6 @@ export function LabCharts({ points, p, ax }: Props) {
       </div>
       <div className="panel-head">Model − mid, vol points (two-sided quotes; band = ± half-spread, floored like the fitter)</div>
       <div className="chart-box"><Plot data={resid} layout={layouts.resid} height={200} /></div>
-      <div className="panel-head">Local convexity d²σ/dx², x = call Δ − 0.5</div>
-      <div className="chart-box"><Plot data={convex} layout={layouts.convex} height={180} /></div>
     </>
   );
 }
